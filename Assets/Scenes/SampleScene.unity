@@ -5795,12 +5795,7 @@ MonoBehaviour:
   firebaseService: {fileID: 0}
   sessionTimeLimit: 60
   pityTriggerCount: 5
-  probDollAndInsta: 30
-  probIdOnly: 40
-  probCandy: 30
-  probDollOnly: 10
   noInstaMode: 0
-  useGenderSpecificProbability: 1
   maleProbDollAndInsta: 20
   maleProbIdOnly: 50
   maleProbCandy: 20

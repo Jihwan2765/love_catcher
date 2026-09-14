@@ -28,17 +28,9 @@ namespace ClawMachine.Mechanics
         [Tooltip("천장이 발동할 누적 시도 횟수")]
         public int pityTriggerCount = 5;
         
-        [Header("Reward Probabilities (%)")]
-        [Range(0f, 100f)] public float probDollAndInsta = 30f;
-        [Range(0f, 100f)] public float probIdOnly = 40f;
-        [Range(0f, 100f)] public float probCandy = 30f;
-        [Range(0f, 100f)] public float probDollOnly = 10f;
-
-        [Header("Game Modes & Gender Probabilities")]
+        [Header("Game Modes")]
         [Tooltip("인스타 제외 모드 (인형과 사탕만 뽑힘)")]
         public bool noInstaMode = false;
-        [Tooltip("성별에 따른 확률 적용 활성화 (아래 설정 사용)")]
-        public bool useGenderSpecificProbability = true;
         
         [Header("Male Specific Probabilities (%)")]
         [Range(0f, 100f)] public float maleProbDollAndInsta = 20f;
@@ -173,6 +165,17 @@ namespace ClawMachine.Mechanics
         /// </summary>
         public void StartGameSession(string name, string insta, string bio, string gender, bool isDuplicateRegistration = false)
         {
+            if (!IsSupportedGender(gender))
+            {
+                const string message = "성별 정보가 올바르지 않아 게임을 시작할 수 없습니다. 남성 또는 여성을 다시 선택해주세요.";
+                Debug.LogError($"[게임 세션 시작 실패] 잘못된 성별 값: '{gender}'");
+                if (ClawMachineUIManager.Instance != null)
+                {
+                    ClawMachineUIManager.Instance.ShowRegistrationError(message);
+                }
+                return;
+            }
+
             sessionAttempts = 1; // 1회차부터 표시하도록 수정
             timeRemaining = sessionTimeLimit;
             isDollScoredThisAttempt = false;
@@ -340,27 +343,20 @@ namespace ClawMachine.Mechanics
             float roll = UnityEngine.Random.Range(0f, 100f);
             RewardType reward = RewardType.Candy;
 
-            float currentProbDollAndInsta = probDollAndInsta;
-            float currentProbIdOnly = probIdOnly;
-            float currentProbCandy = probCandy;
-            float currentProbDollOnly = probDollOnly;
-
-            if (useGenderSpecificProbability)
+            if (!TryGetGenderProbabilities(
+                    currentGender,
+                    out float currentProbDollAndInsta,
+                    out float currentProbIdOnly,
+                    out float currentProbCandy,
+                    out float currentProbDollOnly))
             {
-                if (currentGender == "남")
+                const string message = "성별 정보가 올바르지 않아 보상 추첨을 진행할 수 없습니다.";
+                Debug.LogError($"[보상 추첨 실패] 잘못된 성별 값: '{currentGender}'");
+                if (ClawMachineUIManager.Instance != null)
                 {
-                    currentProbDollAndInsta = maleProbDollAndInsta;
-                    currentProbIdOnly = maleProbIdOnly;
-                    currentProbCandy = maleProbCandy;
-                    currentProbDollOnly = maleProbDollOnly;
+                    ClawMachineUIManager.Instance.ShowRegistrationError(message);
                 }
-                else if (currentGender == "여")
-                {
-                    currentProbDollAndInsta = femaleProbDollAndInsta;
-                    currentProbIdOnly = femaleProbIdOnly;
-                    currentProbCandy = femaleProbCandy;
-                    currentProbDollOnly = femaleProbDollOnly;
-                }
+                yield break;
             }
 
             if (noInstaMode)
@@ -568,8 +564,18 @@ namespace ClawMachine.Mechanics
         public void UpdateStatsUI()
         {
             if (ClawMachineUIManager.Instance == null) return;
-            
-            float winChance = probDollAndInsta + probIdOnly + probDollOnly; // 실제 당첨 확률 합계
+
+            string statsGender = ClawMachineUIManager.Instance.registeredGender;
+            float winChance = 0f;
+            if (TryGetGenderProbabilities(
+                    statsGender,
+                    out float dollAndInsta,
+                    out float idOnly,
+                    out _,
+                    out float dollOnly))
+            {
+                winChance = dollAndInsta + idOnly + dollOnly;
+            }
 
             if (firebaseService != null && !string.IsNullOrEmpty(firebaseService.firebaseProjectId))
             {
@@ -609,6 +615,43 @@ namespace ClawMachine.Mechanics
                 
                 ClawMachineUIManager.Instance.SetStats(oppositeGenderCount, totalDolls, winChance);
             }
+        }
+
+        public static bool IsSupportedGender(string gender)
+        {
+            return gender == "남" || gender == "여";
+        }
+
+        public bool TryGetGenderProbabilities(
+            string gender,
+            out float dollAndInsta,
+            out float idOnly,
+            out float candy,
+            out float dollOnly)
+        {
+            if (gender == "남")
+            {
+                dollAndInsta = maleProbDollAndInsta;
+                idOnly = maleProbIdOnly;
+                candy = maleProbCandy;
+                dollOnly = maleProbDollOnly;
+                return true;
+            }
+
+            if (gender == "여")
+            {
+                dollAndInsta = femaleProbDollAndInsta;
+                idOnly = femaleProbIdOnly;
+                candy = femaleProbCandy;
+                dollOnly = femaleProbDollOnly;
+                return true;
+            }
+
+            dollAndInsta = 0f;
+            idOnly = 0f;
+            candy = 0f;
+            dollOnly = 0f;
+            return false;
         }
 
         /// <summary>

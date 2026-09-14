@@ -164,9 +164,8 @@ namespace ClawMachine.UI
         private Button devReloadSceneBtn;
         private System.Collections.Generic.List<ClawMachine.Mechanics.ParticipantData> cachedDbData = new System.Collections.Generic.List<ClawMachine.Mechanics.ParticipantData>();
 
-        private enum DevProbMode { Base, Male, Female }
-        private DevProbMode currentDevProbMode = DevProbMode.Base;
-        private Toggle devUseGenderToggle;
+        private enum DevProbMode { Male, Female }
+        private DevProbMode currentDevProbMode = DevProbMode.Male;
         private Toggle mainNoInstaToggle;
 
         // Dev DB 직접 등록 폼 Fields
@@ -531,21 +530,8 @@ namespace ClawMachine.UI
                 toggleContainer.style.marginBottom = 10;
                 toggleContainer.style.alignItems = Align.Center;
 
-                devUseGenderToggle = new Toggle("성별에 따른 확률 사용");
-                devUseGenderToggle.style.color = new Color(1f, 1f, 1f);
-                if (ClawMachine.Mechanics.GameFlowManager.Instance != null) {
-                    devUseGenderToggle.value = ClawMachine.Mechanics.GameFlowManager.Instance.useGenderSpecificProbability;
-                }
-                devUseGenderToggle.RegisterValueChangedCallback(evt => {
-                    if (ClawMachine.Mechanics.GameFlowManager.Instance != null) {
-                        ClawMachine.Mechanics.GameFlowManager.Instance.useGenderSpecificProbability = evt.newValue;
-                    }
-                });
-                toggleContainer.Add(devUseGenderToggle);
-
                 mainNoInstaToggle = new Toggle("인스타 등록 없이 진행 모드");
                 mainNoInstaToggle.style.color = new Color(1f, 1f, 1f);
-                mainNoInstaToggle.style.marginLeft = 20;
                 if (ClawMachine.Mechanics.GameFlowManager.Instance != null) {
                     mainNoInstaToggle.value = ClawMachine.Mechanics.GameFlowManager.Instance.noInstaMode;
                 }
@@ -560,21 +546,18 @@ namespace ClawMachine.UI
                 probModeContainer.style.flexDirection = FlexDirection.Row;
                 probModeContainer.style.marginBottom = 10;
                 
-                var btnBase = new Button { text = "기본 설정" };
                 var btnMale = new Button { text = "남성용 설정" };
                 var btnFemale = new Button { text = "여성용 설정" };
-                
+
                 Action updateBtnColors = () => {
-                    btnBase.style.backgroundColor = currentDevProbMode == DevProbMode.Base ? new Color(0, 0.4f, 0) : new Color(0.2f, 0.2f, 0.2f);
                     btnMale.style.backgroundColor = currentDevProbMode == DevProbMode.Male ? new Color(0, 0, 0.5f) : new Color(0.2f, 0.2f, 0.2f);
                     btnFemale.style.backgroundColor = currentDevProbMode == DevProbMode.Female ? new Color(0.5f, 0, 0) : new Color(0.2f, 0.2f, 0.2f);
                 };
 
-                btnBase.clicked += () => { currentDevProbMode = DevProbMode.Base; updateBtnColors(); RefreshDevProbSliders(); };
                 btnMale.clicked += () => { currentDevProbMode = DevProbMode.Male; updateBtnColors(); RefreshDevProbSliders(); };
                 btnFemale.clicked += () => { currentDevProbMode = DevProbMode.Female; updateBtnColors(); RefreshDevProbSliders(); };
-                
-                probModeContainer.Add(btnBase); probModeContainer.Add(btnMale); probModeContainer.Add(btnFemale);
+
+                probModeContainer.Add(btnMale); probModeContainer.Add(btnFemale);
                 updateBtnColors();
 
                 // Add above the probability label
@@ -595,8 +578,7 @@ namespace ClawMachine.UI
                     
                     if (ClawMachine.Mechanics.GameFlowManager.Instance != null) {
                         var gm = ClawMachine.Mechanics.GameFlowManager.Instance;
-                        if (currentDevProbMode == DevProbMode.Base) gm.probDollAndInsta = evt.newValue;
-                        else if (currentDevProbMode == DevProbMode.Male) gm.maleProbDollAndInsta = evt.newValue;
+                        if (currentDevProbMode == DevProbMode.Male) gm.maleProbDollAndInsta = evt.newValue;
                         else if (currentDevProbMode == DevProbMode.Female) gm.femaleProbDollAndInsta = evt.newValue;
                     }
                 });
@@ -625,8 +607,7 @@ namespace ClawMachine.UI
                     
                     if (ClawMachine.Mechanics.GameFlowManager.Instance != null) {
                         var gm = ClawMachine.Mechanics.GameFlowManager.Instance;
-                        if (currentDevProbMode == DevProbMode.Base) gm.probIdOnly = evt.newValue;
-                        else if (currentDevProbMode == DevProbMode.Male) gm.maleProbIdOnly = evt.newValue;
+                        if (currentDevProbMode == DevProbMode.Male) gm.maleProbIdOnly = evt.newValue;
                         else if (currentDevProbMode == DevProbMode.Female) gm.femaleProbIdOnly = evt.newValue;
                     }
                 });
@@ -655,8 +636,7 @@ namespace ClawMachine.UI
                     
                     if (ClawMachine.Mechanics.GameFlowManager.Instance != null) {
                         var gm = ClawMachine.Mechanics.GameFlowManager.Instance;
-                        if (currentDevProbMode == DevProbMode.Base) gm.probDollOnly = evt.newValue;
-                        else if (currentDevProbMode == DevProbMode.Male) gm.maleProbDollOnly = evt.newValue;
+                        if (currentDevProbMode == DevProbMode.Male) gm.maleProbDollOnly = evt.newValue;
                         else if (currentDevProbMode == DevProbMode.Female) gm.femaleProbDollOnly = evt.newValue;
                     }
                 });
@@ -685,8 +665,7 @@ namespace ClawMachine.UI
                     
                     if (ClawMachine.Mechanics.GameFlowManager.Instance != null) {
                         var gm = ClawMachine.Mechanics.GameFlowManager.Instance;
-                        if (currentDevProbMode == DevProbMode.Base) gm.probCandy = evt.newValue;
-                        else if (currentDevProbMode == DevProbMode.Male) gm.maleProbCandy = evt.newValue;
+                        if (currentDevProbMode == DevProbMode.Male) gm.maleProbCandy = evt.newValue;
                         else if (currentDevProbMode == DevProbMode.Female) gm.femaleProbCandy = evt.newValue;
                     }
                 });
@@ -937,6 +916,13 @@ namespace ClawMachine.UI
             registeredName = inputName.value;
             registeredInsta = inputInsta.value;
             registeredBio = inputBio.value;
+
+            if (!ClawMachine.Mechanics.GameFlowManager.IsSupportedGender(registeredGender))
+            {
+                ShowRegistrationError("성별을 남성 또는 여성으로 다시 선택해주세요.");
+                Debug.LogError($"[참가자 등록 실패] 잘못된 성별 값: '{registeredGender}'");
+                return;
+            }
 
             bool isInstaRequired = true;
             if (ClawMachine.Mechanics.GameFlowManager.Instance != null && ClawMachine.Mechanics.GameFlowManager.Instance.noInstaMode)
@@ -1775,6 +1761,17 @@ namespace ClawMachine.UI
             }
         }
 
+        public void ShowRegistrationError(string message)
+        {
+            HideAllOverlays();
+            ShowOverlay(registerOverlay);
+            if (registerWarningText != null)
+            {
+                registerWarningText.text = message;
+                registerWarningText.style.display = DisplayStyle.Flex;
+            }
+        }
+
         private void OpenRetryPayment(RetryPaymentOrigin origin)
         {
             retryPaymentOrigin = origin;
@@ -2194,17 +2191,12 @@ namespace ClawMachine.UI
             if (ClawMachine.Mechanics.GameFlowManager.Instance == null) return;
             var gm = ClawMachine.Mechanics.GameFlowManager.Instance;
             
-            if (devUseGenderToggle != null) {
-                devUseGenderToggle.value = gm.useGenderSpecificProbability;
-            }
             if (mainNoInstaToggle != null) {
                 mainNoInstaToggle.value = gm.noInstaMode;
             }
 
             float pDollInsta = 0, pId = 0, pDoll = 0, pCandy = 0;
             switch(currentDevProbMode) {
-                case DevProbMode.Base:
-                    pDollInsta = gm.probDollAndInsta; pId = gm.probIdOnly; pDoll = gm.probDollOnly; pCandy = gm.probCandy; break;
                 case DevProbMode.Male:
                     pDollInsta = gm.maleProbDollAndInsta; pId = gm.maleProbIdOnly; pDoll = gm.maleProbDollOnly; pCandy = gm.maleProbCandy; break;
                 case DevProbMode.Female:
