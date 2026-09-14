@@ -2029,8 +2029,7 @@ namespace ClawMachine.UI
         private void HandleQuitConfirmNoClick()
         {
             exitConfirmCount = 0;
-            HideOverlay(quitConfirmOverlay);
-            OnContinueSession?.Invoke();
+            ExecuteSuccessRetryClick();
         }
 
         private void HandleQuitConfirmYesClick()
