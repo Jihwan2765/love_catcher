@@ -55,6 +55,7 @@ namespace ClawMachine.UI
         private Label matchedBio;
         private Button successRetryBtn;
         private Button successExitBtn;
+        private VisualElement successRetryQRCodeCard;
         private Label successSubTitle;
         private Label dollPickupNotice;
 
@@ -281,6 +282,7 @@ namespace ClawMachine.UI
             matchedBio = root.Q<Label>("MatchedBio");
             successRetryBtn = root.Q<Button>("SuccessRetryBtn");
             successExitBtn = root.Q<Button>("SuccessExitBtn");
+            successRetryQRCodeCard = root.Q<VisualElement>("RetryQRCodeCard");
             successSubTitle = root.Q<Label>("SuccessSubTitle");
             dollPickupNotice = root.Q<Label>("DollPickupNotice");
 
@@ -1983,10 +1985,24 @@ namespace ClawMachine.UI
                     dollPickupNotice.style.display = DisplayStyle.Flex;
             }
 
+            bool hasRemainingPlays = currentCoins > 0;
             if (successRetryBtn != null)
             {
-                successRetryBtn.text = currentCoins > 0 ? "다시하기 (코인 차감)" : "또 뽑기 (결제 필요)";
+                successRetryBtn.text = hasRemainingPlays ? "이어하기 (코인 차감)" : "또 뽑기 (결제 필요)";
+                successRetryBtn.style.marginRight = hasRemainingPlays ? 0f : 8f;
             }
+
+            // 구매한 뽑기 횟수가 남아 있다면 중간 성공 화면에서는
+            // 결제 안내와 종료 선택을 숨기고 남은 횟수를 이어서 사용하게 합니다.
+            if (successExitBtn != null)
+            {
+                successExitBtn.style.display = hasRemainingPlays ? DisplayStyle.None : DisplayStyle.Flex;
+            }
+            if (successRetryQRCodeCard != null)
+            {
+                successRetryQRCodeCard.style.display = hasRemainingPlays ? DisplayStyle.None : DisplayStyle.Flex;
+            }
+            successCard.style.marginRight = hasRemainingPlays ? 0f : 40f;
 
             ShowOverlay(successOverlay);
         }
@@ -2115,7 +2131,11 @@ namespace ClawMachine.UI
                 // UI Navigation Group Setup
                 if (overlay == successOverlay)
                 {
-                    SetNavigationGroup(NavGroup.Success, new Button[] { successRetryBtn, successExitBtn });
+                    SetNavigationGroup(
+                        NavGroup.Success,
+                        currentCoins > 0
+                            ? new Button[] { successRetryBtn }
+                            : new Button[] { successRetryBtn, successExitBtn });
                 }
                 else if (overlay == quitConfirmOverlay)
                 {
