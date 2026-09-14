@@ -5803,6 +5803,12 @@ MonoBehaviour:
   femaleProbDoll: 40
   femaleProbInstagram: 30
   femaleProbCandy: 20
+  maleNoInstaProbLegendary: 10
+  maleNoInstaProbDoll: 30
+  maleNoInstaProbCandy: 60
+  femaleNoInstaProbLegendary: 10
+  femaleNoInstaProbDoll: 40
+  femaleNoInstaProbCandy: 50
   maleProfiles: []
   femaleProfiles: []
   totalInstaCards: 20

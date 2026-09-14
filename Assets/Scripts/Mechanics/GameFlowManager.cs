@@ -39,6 +39,16 @@ namespace ClawMachine.Mechanics
         [Range(0f, 100f)] public float femaleProbDoll = 40f;
         [Range(0f, 100f)] public float femaleProbInstagram = 30f;
         [Range(0f, 100f)] public float femaleProbCandy = 20f;
+
+        [Header("Male Probabilities Without Instagram (%)")]
+        [Range(0f, 100f)] public float maleNoInstaProbLegendary = 10f;
+        [Range(0f, 100f)] public float maleNoInstaProbDoll = 30f;
+        [Range(0f, 100f)] public float maleNoInstaProbCandy = 60f;
+
+        [Header("Female Probabilities Without Instagram (%)")]
+        [Range(0f, 100f)] public float femaleNoInstaProbLegendary = 10f;
+        [Range(0f, 100f)] public float femaleNoInstaProbDoll = 40f;
+        [Range(0f, 100f)] public float femaleNoInstaProbCandy = 50f;
         
         [Header("Mock Database (Firebase 연동 대기용)")]
         [Tooltip("남성 참가자 목록 (여성이 플레이할 때 매칭 대상)")]
@@ -84,6 +94,12 @@ namespace ClawMachine.Mechanics
         private const float DefaultFemaleDoll = 40f;
         private const float DefaultFemaleInstagram = 30f;
         private const float DefaultFemaleCandy = 20f;
+        private const float DefaultMaleNoInstaLegendary = 10f;
+        private const float DefaultMaleNoInstaDoll = 30f;
+        private const float DefaultMaleNoInstaCandy = 60f;
+        private const float DefaultFemaleNoInstaLegendary = 10f;
+        private const float DefaultFemaleNoInstaDoll = 40f;
+        private const float DefaultFemaleNoInstaCandy = 50f;
 
         private void Awake()
         {
@@ -110,6 +126,14 @@ namespace ClawMachine.Mechanics
             femaleProbDoll = DefaultFemaleDoll;
             femaleProbInstagram = DefaultFemaleInstagram;
             femaleProbCandy = DefaultFemaleCandy;
+
+            maleNoInstaProbLegendary = DefaultMaleNoInstaLegendary;
+            maleNoInstaProbDoll = DefaultMaleNoInstaDoll;
+            maleNoInstaProbCandy = DefaultMaleNoInstaCandy;
+
+            femaleNoInstaProbLegendary = DefaultFemaleNoInstaLegendary;
+            femaleNoInstaProbDoll = DefaultFemaleNoInstaDoll;
+            femaleNoInstaProbCandy = DefaultFemaleNoInstaCandy;
         }
 
         private void Start()
@@ -344,8 +368,10 @@ namespace ClawMachine.Mechanics
             }
 
             string currentGender = ClawMachineUIManager.Instance.registeredGender;
+            bool hasInstagram = !string.IsNullOrWhiteSpace(ClawMachineUIManager.Instance.registeredInsta);
             if (!TryGetGenderProbabilities(
                     currentGender,
+                    hasInstagram,
                     out float legendaryWeight,
                     out float dollWeight,
                     out float instagramWeight,
@@ -358,14 +384,6 @@ namespace ClawMachine.Mechanics
                     ClawMachineUIManager.Instance.ShowRegistrationError(message);
                 }
                 yield break;
-            }
-
-            // 인스타 미입력 참가자는 인스타 몫을 사탕에 합산합니다.
-            bool hasInstagram = !string.IsNullOrWhiteSpace(ClawMachineUIManager.Instance.registeredInsta);
-            if (!hasInstagram)
-            {
-                candyWeight += instagramWeight;
-                instagramWeight = 0f;
             }
 
             // 레전더리 재고가 없으면 해당 보상을 제외하고 나머지 비율대로 자동 정규화합니다.
@@ -600,16 +618,17 @@ namespace ClawMachine.Mechanics
             if (ClawMachineUIManager.Instance == null) return;
 
             string statsGender = ClawMachineUIManager.Instance.registeredGender;
+            bool hasInstagram = !string.IsNullOrWhiteSpace(ClawMachineUIManager.Instance.registeredInsta);
             float winChance = 0f;
             if (TryGetGenderProbabilities(
                     statsGender,
+                    hasInstagram,
                     out float legendary,
                     out float doll,
                     out float instagram,
                     out float candy))
             {
                 if (totalLegendaryDolls <= 0) legendary = 0f;
-                bool hasInstagram = !string.IsNullOrWhiteSpace(ClawMachineUIManager.Instance.registeredInsta);
                 float total = legendary + doll + candy + instagram;
                 if (total > 0f)
                 {
@@ -664,6 +683,7 @@ namespace ClawMachine.Mechanics
 
         public bool TryGetGenderProbabilities(
             string gender,
+            bool hasInstagram,
             out float legendary,
             out float doll,
             out float instagram,
@@ -671,19 +691,19 @@ namespace ClawMachine.Mechanics
         {
             if (gender == "남")
             {
-                legendary = maleProbLegendary;
-                doll = maleProbDoll;
-                instagram = maleProbInstagram;
-                candy = maleProbCandy;
+                legendary = hasInstagram ? maleProbLegendary : maleNoInstaProbLegendary;
+                doll = hasInstagram ? maleProbDoll : maleNoInstaProbDoll;
+                instagram = hasInstagram ? maleProbInstagram : 0f;
+                candy = hasInstagram ? maleProbCandy : maleNoInstaProbCandy;
                 return true;
             }
 
             if (gender == "여")
             {
-                legendary = femaleProbLegendary;
-                doll = femaleProbDoll;
-                instagram = femaleProbInstagram;
-                candy = femaleProbCandy;
+                legendary = hasInstagram ? femaleProbLegendary : femaleNoInstaProbLegendary;
+                doll = hasInstagram ? femaleProbDoll : femaleNoInstaProbDoll;
+                instagram = hasInstagram ? femaleProbInstagram : 0f;
+                candy = hasInstagram ? femaleProbCandy : femaleNoInstaProbCandy;
                 return true;
             }
 

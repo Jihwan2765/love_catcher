@@ -204,8 +204,6 @@
                         </ui:VisualElement>
                         <ui:Slider name="DevProbCandySlider" low-value="0" high-value="100" value="20" style="margin-bottom: 8px;" />
                         <ui:Label name="DevProbabilityTotalWarning" text="확률 합계: 100.0%" style="font-size: 13px; color: rgb(77, 255, 140); font-weight: bold; margin-top: 6px;" />
-                        <ui:Label name="DevProbabilityWithInstaPreview" text="인스타 입력: 레전더리 10.0% · 인형 30.0% · 인스타 40.0% · 사탕 20.0%" style="font-size: 12px; color: rgba(255, 255, 255, 0.85); margin-top: 5px; white-space: normal;" />
-                        <ui:Label name="DevProbabilityWithoutInstaPreview" text="인스타 미입력: 레전더리 10.0% · 인형 30.0% · 인스타 0.0% · 사탕 60.0%" style="font-size: 12px; color: rgba(255, 255, 255, 0.85); margin-top: 3px; white-space: normal;" />
                     </ui:VisualElement>
                     <ui:VisualElement class="form-field" style="margin-top: 16px;">
                         <ui:Label text="게임 상태 및 통계 설정" class="form-label" style="color: rgb(150, 255, 100); font-size: 16px; font-weight: bold;" />
