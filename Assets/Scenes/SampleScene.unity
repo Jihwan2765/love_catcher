@@ -4998,13 +4998,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1159823090}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.08771322, y: -0.70164496, z: 0.7061335, w: 0.037098765}
-  m_LocalPosition: {x: -2.1553545, y: 1.0118166, z: 0.48771405}
+  m_LocalRotation: {x: 0.28967562, y: -0.6603834, z: 0.6499276, w: 0.2399499}
+  m_LocalPosition: {x: -2.279, y: 1.0118166, z: -0.149}
   m_LocalScale: {x: 50, y: 50, z: 50}
   m_ConstrainProportionsScale: 1
   m_Children: []
   m_Father: {fileID: 313862664}
-  m_LocalEulerAnglesHint: {x: 85.882, y: 89.999, z: 259.866}
+  m_LocalEulerAnglesHint: {x: 85.882, y: 123.883, z: 259.866}
 --- !u!4 &1184076372 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 2333165479471200575, guid: 5be221e3439287749b5f72b865041d09, type: 3}
@@ -5798,11 +5798,23 @@ MonoBehaviour:
   probDollAndInsta: 30
   probIdOnly: 40
   probCandy: 30
+  probDollOnly: 10
+  noInstaMode: 0
+  useGenderSpecificProbability: 1
+  maleProbDollAndInsta: 20
+  maleProbIdOnly: 50
+  maleProbCandy: 20
+  maleProbDollOnly: 10
+  femaleProbDollAndInsta: 20
+  femaleProbIdOnly: 30
+  femaleProbCandy: 20
+  femaleProbDollOnly: 30
   maleProfiles: []
   femaleProfiles: []
   totalInstaCards: 20
   totalDolls: 100
   totalAttempts: 0
+  oppositeGenderCount: 20
 --- !u!4 &1390976363
 Transform:
   m_ObjectHideFlags: 0
