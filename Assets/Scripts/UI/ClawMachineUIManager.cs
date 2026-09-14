@@ -74,7 +74,16 @@ namespace ClawMachine.UI
         private Button btnCoinStart;
         private int currentCoins = 0;
         private int pendingCoinsToCharge = 0;
-        private bool isRetryingFromSuccess = false;
+
+        private enum RetryPaymentOrigin
+        {
+            None,
+            SuccessResult,
+            FailResult,
+            BottomBar
+        }
+
+        private RetryPaymentOrigin retryPaymentOrigin = RetryPaymentOrigin.None;
 
         // Quit Confirm Retention Fields & state
         private Label quitConfirmTitle;
@@ -389,7 +398,6 @@ namespace ClawMachine.UI
                 retryButton.clicked += () => 
                 { 
                     playBtnSound(); 
-                    isRetryingFromSuccess = false; 
                     ExecuteRetryAction(); 
                 };
             }
@@ -428,16 +436,8 @@ namespace ClawMachine.UI
             {
                 failRetryCloseBtn.clicked += () => 
                 { 
-                    playBtnSound(); 
-                    HideOverlay(failRetryOverlay); 
-                    if (isRetryingFromSuccess)
-                    {
-                        ShowOverlay(successOverlay);
-                    }
-                    else
-                    {
-                        ShowRetryButton(true);
-                    }
+                    playBtnSound();
+                    HandleRetryPaymentBack();
                 };
             }
             if (failRetryAgainBtn != null)
@@ -1025,6 +1025,7 @@ namespace ClawMachine.UI
         {
             // Clear coin selection state
             ClearStagedCoins();
+            retryPaymentOrigin = RetryPaymentOrigin.None;
 
             // Reset actual coins to 0 upon quitting
             currentCoins = 0;
@@ -1505,7 +1506,6 @@ namespace ClawMachine.UI
 
             if (button == retryButton)
             {
-                isRetryingFromSuccess = false;
                 ExecuteRetryAction();
             }
             else if (button == quitButton)
@@ -1538,15 +1538,7 @@ namespace ClawMachine.UI
             }
             else if (button == failRetryCloseBtn)
             {
-                HideOverlay(failRetryOverlay);
-                if (isRetryingFromSuccess)
-                {
-                    ShowOverlay(successOverlay);
-                }
-                else
-                {
-                    ShowRetryButton(true);
-                }
+                HandleRetryPaymentBack();
             }
             else if (button == btnCoinPack1)
             {
@@ -1724,23 +1716,15 @@ namespace ClawMachine.UI
                 RecordPlaySession(0);
 
                 HideAllOverlays();
-                if (isRetryingFromSuccess)
+                retryPaymentOrigin = RetryPaymentOrigin.None;
+                if (ClawMachine.Mechanics.GameFlowManager.Instance != null)
                 {
-                    exitConfirmCount = 0;
-                    OnContinueSession?.Invoke();
-                }
-                else
-                {
-                    if (ClawMachine.Mechanics.GameFlowManager.Instance != null)
-                    {
-                        ClawMachine.Mechanics.GameFlowManager.Instance.RequestRetry();
-                    }
+                    ClawMachine.Mechanics.GameFlowManager.Instance.RequestRetry();
                 }
             }
             else
             {
-                HideAllOverlays();
-                ShowOverlay(failRetryOverlay);
+                OpenRetryPayment(RetryPaymentOrigin.BottomBar);
             }
         }
 
@@ -1757,13 +1741,12 @@ namespace ClawMachine.UI
                 RecordPlaySession(0);
 
                 exitConfirmCount = 0;
+                retryPaymentOrigin = RetryPaymentOrigin.None;
                 OnContinueSession?.Invoke();
             }
             else
             {
-                isRetryingFromSuccess = true;
-                HideAllOverlays();
-                ShowOverlay(failRetryOverlay);
+                OpenRetryPayment(RetryPaymentOrigin.SuccessResult);
             }
         }
 
@@ -1780,6 +1763,7 @@ namespace ClawMachine.UI
                 RecordPlaySession(0);
 
                 HideAllOverlays();
+                retryPaymentOrigin = RetryPaymentOrigin.None;
                 if (ClawMachine.Mechanics.GameFlowManager.Instance != null)
                 {
                     ClawMachine.Mechanics.GameFlowManager.Instance.RequestRetry();
@@ -1787,9 +1771,40 @@ namespace ClawMachine.UI
             }
             else
             {
-                isRetryingFromSuccess = false;
-                HideAllOverlays();
-                ShowOverlay(failRetryOverlay);
+                OpenRetryPayment(RetryPaymentOrigin.FailResult);
+            }
+        }
+
+        private void OpenRetryPayment(RetryPaymentOrigin origin)
+        {
+            retryPaymentOrigin = origin;
+            ClearStagedCoins();
+            HideAllOverlays();
+            ShowOverlay(failRetryOverlay);
+        }
+
+        private void HandleRetryPaymentBack()
+        {
+            RetryPaymentOrigin origin = retryPaymentOrigin;
+            retryPaymentOrigin = RetryPaymentOrigin.None;
+
+            // 결제가 확정되지 않은 패키지 선택은 뒤로 갈 때 폐기합니다.
+            ClearStagedCoins();
+            HideOverlay(failRetryOverlay);
+
+            switch (origin)
+            {
+                case RetryPaymentOrigin.SuccessResult:
+                    ShowOverlay(successOverlay);
+                    break;
+                case RetryPaymentOrigin.FailResult:
+                    // 기존 실패 문구와 이모지는 유지하고 팝업만 다시 표시합니다.
+                    ShowOverlay(failOverlay);
+                    break;
+                case RetryPaymentOrigin.BottomBar:
+                default:
+                    ShowRetryButton(true);
+                    break;
             }
         }
 
@@ -1820,8 +1835,10 @@ namespace ClawMachine.UI
                 RecordPlaySession(revenue);
 
                 HideAllOverlays();
-                
-                if (isRetryingFromSuccess)
+
+                RetryPaymentOrigin completedOrigin = retryPaymentOrigin;
+                retryPaymentOrigin = RetryPaymentOrigin.None;
+                if (completedOrigin == RetryPaymentOrigin.SuccessResult)
                 {
                     OnContinueSession?.Invoke();
                 }
@@ -1907,6 +1924,7 @@ namespace ClawMachine.UI
 
         public void ShowRewardPopup(ClawMachine.Mechanics.RewardType reward, string name, string gender, string insta, string bio)
         {
+            retryPaymentOrigin = RetryPaymentOrigin.None;
             HideAllOverlays();
             
             // 끈질긴 그만두기 버튼 카운트 초기화
@@ -2069,6 +2087,7 @@ namespace ClawMachine.UI
 
         public void ShowFailPopup()
         {
+            retryPaymentOrigin = RetryPaymentOrigin.None;
             HideAllOverlays();
 
             // 랜덤 귀여운 멘트 & 이모지 선택
