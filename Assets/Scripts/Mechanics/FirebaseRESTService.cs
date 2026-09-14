@@ -37,6 +37,19 @@ namespace ClawMachine.Mechanics
         [Tooltip("Firebase 콘솔에서 확인할 수 있는 프로젝트 고유 ID")]
         public string firebaseProjectId;
 
+        private int activeWriteOperationCount;
+        public bool IsWriteInProgress => activeWriteOperationCount > 0;
+
+        private void BeginWriteOperation()
+        {
+            activeWriteOperationCount++;
+        }
+
+        private void EndWriteOperation()
+        {
+            activeWriteOperationCount = Mathf.Max(0, activeWriteOperationCount - 1);
+        }
+
         private void Awake()
         {
             if (instance != null && instance != this)
@@ -115,6 +128,7 @@ namespace ClawMachine.Mechanics
 
             string jsonPayload = JsonUtility.ToJson(doc);
             
+            BeginWriteOperation();
             using (UnityWebRequest request = new UnityWebRequest(url, "POST"))
             {
                 byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonPayload);
@@ -123,6 +137,7 @@ namespace ClawMachine.Mechanics
                 request.SetRequestHeader("Content-Type", "application/json");
 
                 yield return request.SendWebRequest();
+                EndWriteOperation();
 
                 if (request.result == UnityWebRequest.Result.Success)
                 {
@@ -425,6 +440,7 @@ namespace ClawMachine.Mechanics
 
             string jsonPayload = JsonUtility.ToJson(patchDoc);
 
+            BeginWriteOperation();
             using (UnityWebRequest request = new UnityWebRequest(url, "PATCH"))
             {
                 byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonPayload);
@@ -433,6 +449,7 @@ namespace ClawMachine.Mechanics
                 request.SetRequestHeader("Content-Type", "application/json");
 
                 yield return request.SendWebRequest();
+                EndWriteOperation();
 
                 if (request.result == UnityWebRequest.Result.Success)
                 {
@@ -621,6 +638,7 @@ namespace ClawMachine.Mechanics
 
             string jsonPayload = JsonUtility.ToJson(doc);
 
+            BeginWriteOperation();
             using (UnityWebRequest request = new UnityWebRequest(url, "PATCH"))
             {
                 byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonPayload);
@@ -629,6 +647,7 @@ namespace ClawMachine.Mechanics
                 request.SetRequestHeader("Content-Type", "application/json");
 
                 yield return request.SendWebRequest();
+                EndWriteOperation();
 
                 if (request.result == UnityWebRequest.Result.Success)
                 {
@@ -656,9 +675,11 @@ namespace ClawMachine.Mechanics
 
             string url = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/Participants/{documentId}";
 
+            BeginWriteOperation();
             using (UnityWebRequest request = new UnityWebRequest(url, "DELETE"))
             {
                 yield return request.SendWebRequest();
+                EndWriteOperation();
 
                 if (request.result == UnityWebRequest.Result.Success)
                 {
@@ -737,6 +758,7 @@ namespace ClawMachine.Mechanics
 
             string jsonPayload = $"{{\"fields\":{{\"totalDolls\":{{\"integerValue\":\"{count}\"}}}}}}";
 
+            BeginWriteOperation();
             using (UnityWebRequest request = new UnityWebRequest(url, "PATCH"))
             {
                 byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonPayload);
@@ -745,6 +767,7 @@ namespace ClawMachine.Mechanics
                 request.SetRequestHeader("Content-Type", "application/json");
 
                 yield return request.SendWebRequest();
+                EndWriteOperation();
 
                 if (request.result == UnityWebRequest.Result.Success)
                 {
@@ -820,12 +843,14 @@ namespace ClawMachine.Mechanics
 
             string url = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/GameState/stats?updateMask.fieldPaths=totalLegendaryDolls";
             string jsonPayload = $"{{\"fields\":{{\"totalLegendaryDolls\":{{\"integerValue\":\"{count}\"}}}}}}";
+            BeginWriteOperation();
             using (UnityWebRequest request = new UnityWebRequest(url, "PATCH"))
             {
                 request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(jsonPayload));
                 request.downloadHandler = new DownloadHandlerBuffer();
                 request.SetRequestHeader("Content-Type", "application/json");
                 yield return request.SendWebRequest();
+                EndWriteOperation();
 
                 bool success = request.result == UnityWebRequest.Result.Success;
                 if (success) Debug.Log($"[Firebase] 남은 레전더리 인형 개수 업데이트 성공: {count}개");
@@ -979,6 +1004,7 @@ namespace ClawMachine.Mechanics
             string url = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/GameState/stats?{maskBuilder.ToString()}";
             string jsonPayload = $"{{\"fields\":{fieldsBuilder.ToString()}}}";
 
+            BeginWriteOperation();
             using (UnityWebRequest request = new UnityWebRequest(url, "PATCH"))
             {
                 byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonPayload);
@@ -987,6 +1013,7 @@ namespace ClawMachine.Mechanics
                 request.SetRequestHeader("Content-Type", "application/json");
 
                 yield return request.SendWebRequest();
+                EndWriteOperation();
 
                 if (request.result == UnityWebRequest.Result.Success)
                 {

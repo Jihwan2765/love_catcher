@@ -170,6 +170,17 @@ namespace ClawMachine.UI
         private Button devReloadSceneBtn;
         private System.Collections.Generic.List<ClawMachine.Mechanics.ParticipantData> cachedDbData = new System.Collections.Generic.List<ClawMachine.Mechanics.ParticipantData>();
 
+        private struct SceneRecoveryData
+        {
+            public string name;
+            public string insta;
+            public string bio;
+            public string gender;
+        }
+
+        private static bool hasPendingSceneRecovery;
+        private static SceneRecoveryData pendingSceneRecovery;
+
         private enum DevProbMode { Male, Female }
         private DevProbMode currentDevProbMode = DevProbMode.Male;
 
@@ -234,6 +245,11 @@ namespace ClawMachine.UI
             // 코인 정보 로드 및 UI 초기 갱신
             currentCoins = PlayerPrefs.GetInt("LoveCatcher_Coins", 0);
             UpdateCoinUI();
+
+            if (hasPendingSceneRecovery)
+            {
+                StartCoroutine(ResumeGameAfterSceneReload());
+            }
         }
 
         private void OnDestroy()
@@ -881,9 +897,30 @@ namespace ClawMachine.UI
             devReloadSceneBtn.style.backgroundColor = new Color(0.8f, 0f, 0f);
             devReloadSceneBtn.style.marginTop = 10;
             devReloadSceneBtn.style.width = new Length(100, LengthUnit.Percent);
-            devReloadSceneBtn.clicked += () => { 
-                playBtnSound(); 
-                UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name); 
+            devReloadSceneBtn.clicked += () => {
+                var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
+                if (firebase != null && firebase.IsWriteInProgress) return;
+
+                var gameFlow = ClawMachine.Mechanics.GameFlowManager.Instance;
+                if (gameFlow == null || !gameFlow.HasRecoverableSession ||
+                    string.IsNullOrWhiteSpace(registeredName) ||
+                    !ClawMachine.Mechanics.GameFlowManager.IsSupportedGender(registeredGender)) return;
+
+                pendingSceneRecovery = new SceneRecoveryData
+                {
+                    name = registeredName,
+                    insta = registeredInsta,
+                    bio = registeredBio,
+                    gender = registeredGender
+                };
+                hasPendingSceneRecovery = true;
+
+                // 보유 코인은 차감하지 않고 현재 값을 확실히 보존합니다.
+                PlayerPrefs.SetInt("LoveCatcher_Coins", currentCoins);
+                PlayerPrefs.Save();
+
+                playBtnSound();
+                UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
             };
             if (devModeOverlay != null)
             {
@@ -1058,6 +1095,8 @@ namespace ClawMachine.UI
 
         private void Update()
         {
+            UpdateSceneReloadButtonState();
+
             if (UnityEngine.InputSystem.Keyboard.current != null)
             {
                 if (UnityEngine.InputSystem.Keyboard.current.lKey.wasPressedThisFrame &&
@@ -1128,6 +1167,59 @@ namespace ClawMachine.UI
                     }
                 }
             }
+        }
+
+        private void UpdateSceneReloadButtonState()
+        {
+            if (devReloadSceneBtn == null) return;
+
+            var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
+            bool isSaving = firebase != null && firebase.IsWriteInProgress;
+            var gameFlow = ClawMachine.Mechanics.GameFlowManager.Instance;
+            bool canRecoverSession = gameFlow != null && gameFlow.HasRecoverableSession &&
+                                     !string.IsNullOrWhiteSpace(registeredName) &&
+                                     ClawMachine.Mechanics.GameFlowManager.IsSupportedGender(registeredGender);
+
+            devReloadSceneBtn.SetEnabled(!isSaving && canRecoverSession);
+            if (isSaving)
+            {
+                devReloadSceneBtn.text = "Firebase 저장 중...";
+            }
+            else if (!canRecoverSession)
+            {
+                devReloadSceneBtn.text = "진행 중인 게임 없음";
+            }
+            else
+            {
+                devReloadSceneBtn.text = "게임 복구 (씬 리로드)";
+            }
+        }
+
+        private IEnumerator ResumeGameAfterSceneReload()
+        {
+            SceneRecoveryData recovery = pendingSceneRecovery;
+            hasPendingSceneRecovery = false;
+
+            yield return new WaitUntil(() =>
+                ClawMachine.Mechanics.GameFlowManager.Instance != null &&
+                ClawMachine.Mechanics.GameFlowManager.Instance.IsInitialized);
+
+            registeredName = recovery.name;
+            registeredInsta = recovery.insta;
+            registeredBio = recovery.bio;
+            registeredGender = recovery.gender;
+            isDuplicateRegistration = true;
+            pendingCoinsToCharge = 0;
+
+            HideAllOverlays();
+            ClawMachine.Mechanics.GameFlowManager.Instance.StartGameSession(
+                registeredName,
+                registeredInsta,
+                registeredBio,
+                registeredGender,
+                true);
+
+            Debug.Log($"[게임 복구] 씬 리로드 후 {registeredName} 참가자의 게임을 코인 차감 없이 다시 시작했습니다.");
         }
 
         private void ToggleDevMode()

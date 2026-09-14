@@ -73,6 +73,9 @@ namespace ClawMachine.Mechanics
         private bool isDollScoredThisAttempt = false;
         private List<GameObject> scoredDollsThisAttempt = new List<GameObject>();
 
+        public bool IsInitialized { get; private set; }
+        public bool HasRecoverableSession => sessionAttempts > 0;
+
         private const float DefaultMaleLegendary = 10f;
         private const float DefaultMaleDoll = 30f;
         private const float DefaultMaleInstagram = 40f;
@@ -155,6 +158,7 @@ namespace ClawMachine.Mechanics
             
             // 처음에는 조작 금지
             if (clawController != null) clawController.enabled = false;
+            IsInitialized = true;
         }
 
         private void OnDestroy()
