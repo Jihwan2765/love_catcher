@@ -53,10 +53,13 @@ flowchart TD
     
     PlayClaw --> CatchCheck{"인형 골인 여부"}
     
-    CatchCheck -- "인형 획득 성공 🎉" --> MatchLogic["Firebase 실시간 반대 성별 매칭"]
-    MatchLogic --> RewardRoll["확률별 보상 판정<br/>1. 인형 + 인스타<br/>2. 인스타 카드<br/>3. 실물 인형<br/>4. 사탕 (꽝)"]
-    RewardRoll --> LockTarget[("DB: 해당 참가자 'isPicked' 잠금")]
-    LockTarget --> SuccessPopup["매칭 결과 팝업 & 인형 수령 안내"]
+    CatchCheck -- "인형 획득 성공 🎉" --> RewardRoll["확률별 보상 판정<br/>1. 레전더리<br/>2. 인형<br/>3. 이성 인스타 아이디<br/>4. 사탕"]
+    RewardRoll -- "인스타 당첨" --> MatchLogic["Firebase 실시간 반대 성별 매칭"]
+    MatchLogic -- "지급 가능" --> LockTarget[("DB: 해당 참가자 'isPicked' 잠금")]
+    MatchLogic -- "대상 없음 / 조회 실패" --> Reroll["인스타 제외 비율 유지 재추첨"]
+    RewardRoll -- "그 외 보상" --> SuccessPopup["보상 결과 팝업 & 수령 안내"]
+    LockTarget --> SuccessPopup
+    Reroll --> SuccessPopup
     
     CatchCheck -- "실패 😢" --> PityCheck{"누적 5회 실패?"}
     PityCheck -- "YES (5회차 달성)" --> ActivatePity["🔥 MAX 파워 천장 모드 발동!<br/>(악력 대폭 증가 + 자석 인력 지원)"]
@@ -76,7 +79,7 @@ flowchart TD
 ### 2. 💘 스마트 이성 매칭 & 유연한 보상 룰 (`GameFlowManager`)
 - 플레이어의 성별을 판별하여 DB 내 **반대 성별 풀 중 아직 뽑히지 않은(`isPicked == false`) 참가자**를 무작위 추천합니다.
 - 성별별 당첨 확률 튜닝(남성/여성 차등 확률) 지원.
-- 4가지 보상 타입(인형+인스타, 인스타 카드, 실물 인형, 사탕)을 자동 계산하며, 인터넷 연결이 불안정할 경우 **로컬 Fallback 프로필 풀**이 즉각 동작합니다.
+- 4가지 보상 타입(레전더리, 인형, 이성 인스타 아이디, 사탕)을 성별 설정에 따라 추첨합니다. 인스타 미입력 시 인스타 확률은 사탕에 합산되며, 인스타 당첨 후 지급 대상이 없거나 Firebase 조회가 실패하면 인스타를 제외한 보상 비율로 재추첨합니다.
 
 ### 3. 🔥 실패 방지 천장(Pity) 자석 어시스트 (`ClawPityMagnet`)
 - 연속 5회차 실패 시 화면에 "🔥 **MAX 파워 모드 발동!** 🔥" 배너가 표시됩니다.
@@ -166,6 +169,7 @@ flowchart TD
   - `attempts` (integer): 누적 시도 횟수
 - `GameState/stats` 문서:
   - `totalDolls` (integer): 남은 실물 인형 재고 수량
+  - `totalLegendaryDolls` (integer): 남은 레전더리 인형 재고 수량(기본값 10)
   - `totalRevenue` (integer): 현장 총 누적 매출 (원)
   - `totalRegistrations` (integer): 총 참가 등록 수
   - `totalPlays` (integer): 총 플레이 수

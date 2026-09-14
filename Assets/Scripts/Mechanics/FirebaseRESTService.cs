@@ -759,6 +759,81 @@ namespace ClawMachine.Mechanics
             }
         }
 
+        /// <summary>
+        /// GameState/stats 문서에서 레전더리 인형 재고(totalLegendaryDolls)를 가져옵니다.
+        /// </summary>
+        public IEnumerator GetTotalLegendaryDolls(Action<int> callback)
+        {
+            const int defaultCount = 10;
+            if (string.IsNullOrEmpty(firebaseProjectId))
+            {
+                callback?.Invoke(PlayerPrefs.GetInt("Stats_TotalLegendaryDolls", defaultCount));
+                yield break;
+            }
+
+            string getUrl = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/GameState/stats";
+            using (UnityWebRequest request = UnityWebRequest.Get(getUrl))
+            {
+                yield return request.SendWebRequest();
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    Debug.LogWarning($"[Firebase] 레전더리 인형 재고 조회 실패: {request.error}");
+                    callback?.Invoke(PlayerPrefs.GetInt("Stats_TotalLegendaryDolls", defaultCount));
+                    yield break;
+                }
+
+                try
+                {
+                    var doc = JsonUtility.FromJson<GameStateDocument>(request.downloadHandler.text);
+                    if (doc?.fields?.totalLegendaryDolls != null &&
+                        int.TryParse(doc.fields.totalLegendaryDolls.integerValue, out int count))
+                    {
+                        PlayerPrefs.SetInt("Stats_TotalLegendaryDolls", count);
+                        PlayerPrefs.Save();
+                        callback?.Invoke(count);
+                        yield break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[Firebase] totalLegendaryDolls 파싱 에러: {ex.Message}");
+                }
+
+                callback?.Invoke(PlayerPrefs.GetInt("Stats_TotalLegendaryDolls", defaultCount));
+            }
+        }
+
+        /// <summary>
+        /// GameState/stats 문서의 레전더리 인형 재고를 별도 필드로 저장합니다.
+        /// </summary>
+        public IEnumerator UpdateTotalLegendaryDolls(int count, Action<bool> callback)
+        {
+            count = Mathf.Max(0, count);
+            PlayerPrefs.SetInt("Stats_TotalLegendaryDolls", count);
+            PlayerPrefs.Save();
+
+            if (string.IsNullOrEmpty(firebaseProjectId))
+            {
+                callback?.Invoke(true);
+                yield break;
+            }
+
+            string url = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/GameState/stats?updateMask.fieldPaths=totalLegendaryDolls";
+            string jsonPayload = $"{{\"fields\":{{\"totalLegendaryDolls\":{{\"integerValue\":\"{count}\"}}}}}}";
+            using (UnityWebRequest request = new UnityWebRequest(url, "PATCH"))
+            {
+                request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(jsonPayload));
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.SetRequestHeader("Content-Type", "application/json");
+                yield return request.SendWebRequest();
+
+                bool success = request.result == UnityWebRequest.Result.Success;
+                if (success) Debug.Log($"[Firebase] 남은 레전더리 인형 개수 업데이트 성공: {count}개");
+                else Debug.LogError($"[Firebase] 레전더리 인형 개수 업데이트 실패: {request.error}");
+                callback?.Invoke(success);
+            }
+        }
+
         // =========================================================================
         // GameState Stats API - Extended Metrics
         // =========================================================================
@@ -771,6 +846,7 @@ namespace ClawMachine.Mechanics
             GameStatsData defaultStats = new GameStatsData
             {
                 totalDolls = 100,
+                totalLegendaryDolls = 10,
                 totalRevenue = 0,
                 totalRegistrations = 0,
                 totalPlays = 0,
@@ -780,6 +856,7 @@ namespace ClawMachine.Mechanics
             if (string.IsNullOrEmpty(firebaseProjectId))
             {
                 defaultStats.totalDolls = PlayerPrefs.GetInt("Stats_TotalDolls", 100);
+                defaultStats.totalLegendaryDolls = PlayerPrefs.GetInt("Stats_TotalLegendaryDolls", 10);
                 defaultStats.totalRevenue = PlayerPrefs.GetInt("Stats_TotalRevenue", 0);
                 defaultStats.totalRegistrations = PlayerPrefs.GetInt("Stats_TotalRegistrations", 0);
                 defaultStats.totalPlays = PlayerPrefs.GetInt("Stats_TotalPlays", 0);
@@ -797,6 +874,7 @@ namespace ClawMachine.Mechanics
                 {
                     Debug.LogWarning($"[Firebase] GameState/stats 조회 실패 (초기값이 없을 수 있음): {request.error}");
                     defaultStats.totalDolls = PlayerPrefs.GetInt("Stats_TotalDolls", 100);
+                    defaultStats.totalLegendaryDolls = PlayerPrefs.GetInt("Stats_TotalLegendaryDolls", 10);
                     defaultStats.totalRevenue = PlayerPrefs.GetInt("Stats_TotalRevenue", 0);
                     defaultStats.totalRegistrations = PlayerPrefs.GetInt("Stats_TotalRegistrations", 0);
                     defaultStats.totalPlays = PlayerPrefs.GetInt("Stats_TotalPlays", 0);
@@ -814,12 +892,14 @@ namespace ClawMachine.Mechanics
                         GameStatsData stats = new GameStatsData();
                         
                         stats.totalDolls = (doc.fields.totalDolls != null && int.TryParse(doc.fields.totalDolls.integerValue, out int td)) ? td : PlayerPrefs.GetInt("Stats_TotalDolls", 100);
+                        stats.totalLegendaryDolls = (doc.fields.totalLegendaryDolls != null && int.TryParse(doc.fields.totalLegendaryDolls.integerValue, out int tld)) ? tld : PlayerPrefs.GetInt("Stats_TotalLegendaryDolls", 10);
                         stats.totalRevenue = (doc.fields.totalRevenue != null && int.TryParse(doc.fields.totalRevenue.integerValue, out int tr)) ? tr : PlayerPrefs.GetInt("Stats_TotalRevenue", 0);
                         stats.totalRegistrations = (doc.fields.totalRegistrations != null && int.TryParse(doc.fields.totalRegistrations.integerValue, out int treg)) ? treg : PlayerPrefs.GetInt("Stats_TotalRegistrations", 0);
                         stats.totalPlays = (doc.fields.totalPlays != null && int.TryParse(doc.fields.totalPlays.integerValue, out int tp)) ? tp : PlayerPrefs.GetInt("Stats_TotalPlays", 0);
                         stats.totalSuccesses = (doc.fields.totalSuccesses != null && int.TryParse(doc.fields.totalSuccesses.integerValue, out int ts)) ? ts : PlayerPrefs.GetInt("Stats_TotalSuccesses", 0);
 
                         PlayerPrefs.SetInt("Stats_TotalDolls", stats.totalDolls);
+                        PlayerPrefs.SetInt("Stats_TotalLegendaryDolls", stats.totalLegendaryDolls);
                         PlayerPrefs.SetInt("Stats_TotalRevenue", stats.totalRevenue);
                         PlayerPrefs.SetInt("Stats_TotalRegistrations", stats.totalRegistrations);
                         PlayerPrefs.SetInt("Stats_TotalPlays", stats.totalPlays);
@@ -853,6 +933,7 @@ namespace ClawMachine.Mechanics
             foreach (var f in fieldsToUpdate)
             {
                 if (f == "totalDolls") PlayerPrefs.SetInt("Stats_TotalDolls", stats.totalDolls);
+                else if (f == "totalLegendaryDolls") PlayerPrefs.SetInt("Stats_TotalLegendaryDolls", stats.totalLegendaryDolls);
                 else if (f == "totalRevenue") PlayerPrefs.SetInt("Stats_TotalRevenue", stats.totalRevenue);
                 else if (f == "totalRegistrations") PlayerPrefs.SetInt("Stats_TotalRegistrations", stats.totalRegistrations);
                 else if (f == "totalPlays") PlayerPrefs.SetInt("Stats_TotalPlays", stats.totalPlays);
@@ -881,6 +962,7 @@ namespace ClawMachine.Mechanics
 
                 int val = 0;
                 if (fieldName == "totalDolls") val = stats.totalDolls;
+                else if (fieldName == "totalLegendaryDolls") val = stats.totalLegendaryDolls;
                 else if (fieldName == "totalRevenue") val = stats.totalRevenue;
                 else if (fieldName == "totalRegistrations") val = stats.totalRegistrations;
                 else if (fieldName == "totalPlays") val = stats.totalPlays;
@@ -949,6 +1031,7 @@ namespace ClawMachine.Mechanics
             else if (fieldName == "totalSuccesses") currentStats.totalSuccesses += amount;
             else if (fieldName == "totalRevenue") currentStats.totalRevenue += amount;
             else if (fieldName == "totalDolls") currentStats.totalDolls += amount;
+            else if (fieldName == "totalLegendaryDolls") currentStats.totalLegendaryDolls += amount;
 
             yield return UpdateGameStats(currentStats, new List<string> { fieldName }, null);
         }
@@ -1001,6 +1084,7 @@ namespace ClawMachine.Mechanics
     public class GameStateFields
     {
         public FirestoreIntField totalDolls;
+        public FirestoreIntField totalLegendaryDolls;
         public FirestoreIntField totalRevenue;
         public FirestoreIntField totalRegistrations;
         public FirestoreIntField totalPlays;
@@ -1080,6 +1164,7 @@ namespace ClawMachine.Mechanics
     public struct GameStatsData
     {
         public int totalDolls;
+        public int totalLegendaryDolls;
         public int totalRevenue;
         public int totalRegistrations;
         public int totalPlays;

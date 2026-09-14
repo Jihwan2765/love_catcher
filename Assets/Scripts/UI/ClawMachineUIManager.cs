@@ -18,6 +18,7 @@ namespace ClawMachine.UI
         // UI Elements - HUD
         private Label instaCountText;
         private Label dollCountText;
+        private Label legendaryDollCountText;
         private Label winChanceText;
         private Label attemptCountText;
         private Label timerText;
@@ -121,20 +122,25 @@ namespace ClawMachine.UI
         private Slider devGripForceSlider;
         private Label devGripForceLabel;
         private TextField devGripForceInput;
-        private Slider devProbDollInstaSlider;
-        private Label devProbDollInstaLabel;
-        private TextField devProbDollInstaInput;
-        private Slider devProbIdOnlySlider;
-        private Label devProbIdOnlyLabel;
-        private TextField devProbIdOnlyInput;
-        private Slider devProbDollOnlySlider;
-        private Label devProbDollOnlyLabel;
-        private TextField devProbDollOnlyInput;
+        private Slider devProbLegendarySlider;
+        private Label devProbLegendaryLabel;
+        private TextField devProbLegendaryInput;
+        private Slider devProbInstagramSlider;
+        private Label devProbInstagramLabel;
+        private TextField devProbInstagramInput;
+        private Slider devProbDollSlider;
+        private Label devProbDollLabel;
+        private TextField devProbDollInput;
         private Slider devProbCandySlider;
         private Label devProbCandyLabel;
         private TextField devProbCandyInput;
         private TextField devTotalDollsInput;
         private Button devSaveDollsBtn;
+        private TextField devTotalLegendaryDollsInput;
+        private Button devSaveLegendaryDollsBtn;
+        private Label devProbabilityTotalWarning;
+        private Label devProbabilityWithInstaPreview;
+        private Label devProbabilityWithoutInstaPreview;
         private TextField devCoinsInput;
         private Button devSaveCoinsBtn;
         private Button devCloseBtn;
@@ -166,7 +172,6 @@ namespace ClawMachine.UI
 
         private enum DevProbMode { Male, Female }
         private DevProbMode currentDevProbMode = DevProbMode.Male;
-        private Toggle mainNoInstaToggle;
 
         // Dev DB 직접 등록 폼 Fields
         private TextField devAddName;
@@ -245,6 +250,7 @@ namespace ClawMachine.UI
             // HUD
             instaCountText = root.Q<Label>("InstaCountText");
             dollCountText = root.Q<Label>("DollCountText");
+            legendaryDollCountText = root.Q<Label>("LegendaryDollCountText");
             winChanceText = root.Q<Label>("WinChanceText");
             attemptCountText = root.Q<Label>("AttemptCountText");
             timerText = root.Q<Label>("TimerText");
@@ -326,20 +332,25 @@ namespace ClawMachine.UI
             devGripForceSlider = root.Q<Slider>("DevGripForceSlider");
             devGripForceLabel = root.Q<Label>("DevGripForceLabel");
             devGripForceInput = root.Q<TextField>("DevGripForceInput");
-            devProbDollInstaSlider = root.Q<Slider>("DevProbDollInstaSlider");
-            devProbDollInstaLabel = root.Q<Label>("DevProbDollInstaLabel");
-            devProbDollInstaInput = root.Q<TextField>("DevProbDollInstaInput");
-            devProbIdOnlySlider = root.Q<Slider>("DevProbIdOnlySlider");
-            devProbIdOnlyLabel = root.Q<Label>("DevProbIdOnlyLabel");
-            devProbIdOnlyInput = root.Q<TextField>("DevProbIdOnlyInput");
-            devProbDollOnlySlider = root.Q<Slider>("DevProbDollOnlySlider");
-            devProbDollOnlyLabel = root.Q<Label>("DevProbDollOnlyLabel");
-            devProbDollOnlyInput = root.Q<TextField>("DevProbDollOnlyInput");
+            devProbLegendarySlider = root.Q<Slider>("DevProbLegendarySlider");
+            devProbLegendaryLabel = root.Q<Label>("DevProbLegendaryLabel");
+            devProbLegendaryInput = root.Q<TextField>("DevProbLegendaryInput");
+            devProbInstagramSlider = root.Q<Slider>("DevProbInstagramSlider");
+            devProbInstagramLabel = root.Q<Label>("DevProbInstagramLabel");
+            devProbInstagramInput = root.Q<TextField>("DevProbInstagramInput");
+            devProbDollSlider = root.Q<Slider>("DevProbDollSlider");
+            devProbDollLabel = root.Q<Label>("DevProbDollLabel");
+            devProbDollInput = root.Q<TextField>("DevProbDollInput");
             devProbCandySlider = root.Q<Slider>("DevProbCandySlider");
             devProbCandyLabel = root.Q<Label>("DevProbCandyLabel");
             devProbCandyInput = root.Q<TextField>("DevProbCandyInput");
             devTotalDollsInput = root.Q<TextField>("DevTotalDollsInput");
             devSaveDollsBtn = root.Q<Button>("DevSaveDollsBtn");
+            devTotalLegendaryDollsInput = root.Q<TextField>("DevTotalLegendaryDollsInput");
+            devSaveLegendaryDollsBtn = root.Q<Button>("DevSaveLegendaryDollsBtn");
+            devProbabilityTotalWarning = root.Q<Label>("DevProbabilityTotalWarning");
+            devProbabilityWithInstaPreview = root.Q<Label>("DevProbabilityWithInstaPreview");
+            devProbabilityWithoutInstaPreview = root.Q<Label>("DevProbabilityWithoutInstaPreview");
             devCoinsInput = root.Q<TextField>("DevCoinsInput");
             devSaveCoinsBtn = root.Q<Button>("DevSaveCoinsBtn");
             devCloseBtn = root.Q<Button>("DevCloseBtn");
@@ -386,11 +397,6 @@ namespace ClawMachine.UI
             genderBtnMale.clicked += () => { playBtnSound(); SelectGender("남"); };
             genderBtnFemale.clicked += () => { playBtnSound(); SelectGender("여"); };
             registerSubmitBtn.clicked += () => { playBtnSound(); SubmitRegistration(); };
-            
-            if (registerSubmitBtn != null && registerSubmitBtn.parent != null)
-            {
-                // The mainNoInstaToggle has been moved to the developer mode screen.
-            }
             
             if (retryButton != null)
             {
@@ -523,25 +529,8 @@ namespace ClawMachine.UI
                 });
             }
 
-            if (devProbDollInstaSlider != null && devProbDollInstaSlider.parent != null)
+            if (devProbLegendarySlider != null && devProbLegendarySlider.parent != null)
             {
-                var toggleContainer = new VisualElement();
-                toggleContainer.style.flexDirection = FlexDirection.Row;
-                toggleContainer.style.marginBottom = 10;
-                toggleContainer.style.alignItems = Align.Center;
-
-                mainNoInstaToggle = new Toggle("인스타 등록 없이 진행 모드");
-                mainNoInstaToggle.style.color = new Color(1f, 1f, 1f);
-                if (ClawMachine.Mechanics.GameFlowManager.Instance != null) {
-                    mainNoInstaToggle.value = ClawMachine.Mechanics.GameFlowManager.Instance.noInstaMode;
-                }
-                mainNoInstaToggle.RegisterValueChangedCallback(evt => {
-                    if (ClawMachine.Mechanics.GameFlowManager.Instance != null) {
-                        ClawMachine.Mechanics.GameFlowManager.Instance.noInstaMode = evt.newValue;
-                    }
-                });
-                toggleContainer.Add(mainNoInstaToggle);
-
                 var probModeContainer = new VisualElement();
                 probModeContainer.style.flexDirection = FlexDirection.Row;
                 probModeContainer.style.marginBottom = 10;
@@ -561,96 +550,98 @@ namespace ClawMachine.UI
                 updateBtnColors();
 
                 // Add above the probability label
-                var parent = devProbDollInstaSlider.parent;
-                var indexOfLabel = parent.IndexOf(devProbDollInstaSlider) - 1;
+                var parent = devProbLegendarySlider.parent;
+                var indexOfLabel = parent.IndexOf(devProbLegendarySlider) - 1;
                 if (indexOfLabel >= 0) {
                     parent.Insert(indexOfLabel, probModeContainer);
-                    parent.Insert(indexOfLabel, toggleContainer);
                 }
             }
 
-            if (devProbDollInstaSlider != null)
+            if (devProbLegendarySlider != null)
             {
-                devProbDollInstaSlider.RegisterValueChangedCallback(evt => {
-                    if (devProbDollInstaLabel != null) devProbDollInstaLabel.text = $"[인형 + 인스타] 확률: {evt.newValue:F1}%";
-                    if (devProbDollInstaInput != null && rootVisualElement().focusController.focusedElement != devProbDollInstaInput)
-                        devProbDollInstaInput.value = evt.newValue.ToString("F1");
+                devProbLegendarySlider.RegisterValueChangedCallback(evt => {
+                    if (devProbLegendaryLabel != null) devProbLegendaryLabel.text = $"[레전더리] 확률: {evt.newValue:F1}%";
+                    if (devProbLegendaryInput != null && rootVisualElement().focusController.focusedElement != devProbLegendaryInput)
+                        devProbLegendaryInput.value = evt.newValue.ToString("F1");
                     
                     if (ClawMachine.Mechanics.GameFlowManager.Instance != null) {
                         var gm = ClawMachine.Mechanics.GameFlowManager.Instance;
-                        if (currentDevProbMode == DevProbMode.Male) gm.maleProbDollAndInsta = evt.newValue;
-                        else if (currentDevProbMode == DevProbMode.Female) gm.femaleProbDollAndInsta = evt.newValue;
+                        if (currentDevProbMode == DevProbMode.Male) gm.maleProbLegendary = evt.newValue;
+                        else gm.femaleProbLegendary = evt.newValue;
                     }
+                    RefreshDevProbabilitySummary();
                 });
             }
 
-            if (devProbDollInstaInput != null)
+            if (devProbLegendaryInput != null)
             {
-                devProbDollInstaInput.RegisterValueChangedCallback(evt => {
+                devProbLegendaryInput.RegisterValueChangedCallback(evt => {
                     if (float.TryParse(evt.newValue, out float val))
                     {
                         val = Mathf.Clamp(val, 0f, 100f);
-                        if (devProbDollInstaSlider != null && !Mathf.Approximately(devProbDollInstaSlider.value, val))
+                        if (devProbLegendarySlider != null && !Mathf.Approximately(devProbLegendarySlider.value, val))
                         {
-                            devProbDollInstaSlider.value = val;
+                            devProbLegendarySlider.value = val;
                         }
                     }
                 });
             }
 
-            if (devProbIdOnlySlider != null)
+            if (devProbInstagramSlider != null)
             {
-                devProbIdOnlySlider.RegisterValueChangedCallback(evt => {
-                    if (devProbIdOnlyLabel != null) devProbIdOnlyLabel.text = $"[아이디만] 확률: {evt.newValue:F1}%";
-                    if (devProbIdOnlyInput != null && rootVisualElement().focusController.focusedElement != devProbIdOnlyInput)
-                        devProbIdOnlyInput.value = evt.newValue.ToString("F1");
+                devProbInstagramSlider.RegisterValueChangedCallback(evt => {
+                    if (devProbInstagramLabel != null) devProbInstagramLabel.text = $"[인스타 아이디] 확률: {evt.newValue:F1}%";
+                    if (devProbInstagramInput != null && rootVisualElement().focusController.focusedElement != devProbInstagramInput)
+                        devProbInstagramInput.value = evt.newValue.ToString("F1");
                     
                     if (ClawMachine.Mechanics.GameFlowManager.Instance != null) {
                         var gm = ClawMachine.Mechanics.GameFlowManager.Instance;
-                        if (currentDevProbMode == DevProbMode.Male) gm.maleProbIdOnly = evt.newValue;
-                        else if (currentDevProbMode == DevProbMode.Female) gm.femaleProbIdOnly = evt.newValue;
+                        if (currentDevProbMode == DevProbMode.Male) gm.maleProbInstagram = evt.newValue;
+                        else gm.femaleProbInstagram = evt.newValue;
                     }
+                    RefreshDevProbabilitySummary();
                 });
             }
 
-            if (devProbIdOnlyInput != null)
+            if (devProbInstagramInput != null)
             {
-                devProbIdOnlyInput.RegisterValueChangedCallback(evt => {
+                devProbInstagramInput.RegisterValueChangedCallback(evt => {
                     if (float.TryParse(evt.newValue, out float val))
                     {
                         val = Mathf.Clamp(val, 0f, 100f);
-                        if (devProbIdOnlySlider != null && !Mathf.Approximately(devProbIdOnlySlider.value, val))
+                        if (devProbInstagramSlider != null && !Mathf.Approximately(devProbInstagramSlider.value, val))
                         {
-                            devProbIdOnlySlider.value = val;
+                            devProbInstagramSlider.value = val;
                         }
                     }
                 });
             }
 
-            if (devProbDollOnlySlider != null)
+            if (devProbDollSlider != null)
             {
-                devProbDollOnlySlider.RegisterValueChangedCallback(evt => {
-                    if (devProbDollOnlyLabel != null) devProbDollOnlyLabel.text = $"[실물 인형만] 확률: {evt.newValue:F1}%";
-                    if (devProbDollOnlyInput != null && rootVisualElement().focusController.focusedElement != devProbDollOnlyInput)
-                        devProbDollOnlyInput.value = evt.newValue.ToString("F1");
+                devProbDollSlider.RegisterValueChangedCallback(evt => {
+                    if (devProbDollLabel != null) devProbDollLabel.text = $"[인형] 확률: {evt.newValue:F1}%";
+                    if (devProbDollInput != null && rootVisualElement().focusController.focusedElement != devProbDollInput)
+                        devProbDollInput.value = evt.newValue.ToString("F1");
                     
                     if (ClawMachine.Mechanics.GameFlowManager.Instance != null) {
                         var gm = ClawMachine.Mechanics.GameFlowManager.Instance;
-                        if (currentDevProbMode == DevProbMode.Male) gm.maleProbDollOnly = evt.newValue;
-                        else if (currentDevProbMode == DevProbMode.Female) gm.femaleProbDollOnly = evt.newValue;
+                        if (currentDevProbMode == DevProbMode.Male) gm.maleProbDoll = evt.newValue;
+                        else gm.femaleProbDoll = evt.newValue;
                     }
+                    RefreshDevProbabilitySummary();
                 });
             }
 
-            if (devProbDollOnlyInput != null)
+            if (devProbDollInput != null)
             {
-                devProbDollOnlyInput.RegisterValueChangedCallback(evt => {
+                devProbDollInput.RegisterValueChangedCallback(evt => {
                     if (float.TryParse(evt.newValue, out float val))
                     {
                         val = Mathf.Clamp(val, 0f, 100f);
-                        if (devProbDollOnlySlider != null && !Mathf.Approximately(devProbDollOnlySlider.value, val))
+                        if (devProbDollSlider != null && !Mathf.Approximately(devProbDollSlider.value, val))
                         {
-                            devProbDollOnlySlider.value = val;
+                            devProbDollSlider.value = val;
                         }
                     }
                 });
@@ -659,15 +650,16 @@ namespace ClawMachine.UI
             if (devProbCandySlider != null)
             {
                 devProbCandySlider.RegisterValueChangedCallback(evt => {
-                    if (devProbCandyLabel != null) devProbCandyLabel.text = $"[꽝(사탕)] 확률: {evt.newValue:F1}%";
+                    if (devProbCandyLabel != null) devProbCandyLabel.text = $"[사탕] 확률: {evt.newValue:F1}%";
                     if (devProbCandyInput != null && rootVisualElement().focusController.focusedElement != devProbCandyInput)
                         devProbCandyInput.value = evt.newValue.ToString("F1");
                     
                     if (ClawMachine.Mechanics.GameFlowManager.Instance != null) {
                         var gm = ClawMachine.Mechanics.GameFlowManager.Instance;
                         if (currentDevProbMode == DevProbMode.Male) gm.maleProbCandy = evt.newValue;
-                        else if (currentDevProbMode == DevProbMode.Female) gm.femaleProbCandy = evt.newValue;
+                        else gm.femaleProbCandy = evt.newValue;
                     }
+                    RefreshDevProbabilitySummary();
                 });
             }
 
@@ -713,6 +705,37 @@ namespace ClawMachine.UI
                             }));
                         }
                     }
+                };
+            }
+
+            if (devSaveLegendaryDollsBtn != null)
+            {
+                devSaveLegendaryDollsBtn.clicked += () => {
+                    playBtnSound();
+                    if (devTotalLegendaryDollsInput == null ||
+                        !int.TryParse(devTotalLegendaryDollsInput.value, out int newCount)) return;
+
+                    newCount = Mathf.Max(0, newCount);
+                    devSaveLegendaryDollsBtn.text = "...";
+                    devSaveLegendaryDollsBtn.SetEnabled(false);
+                    var service = ClawMachine.Mechanics.FirebaseRESTService.Instance;
+                    if (service == null)
+                    {
+                        devSaveLegendaryDollsBtn.text = "실패";
+                        devSaveLegendaryDollsBtn.SetEnabled(true);
+                        return;
+                    }
+
+                    StartCoroutine(service.UpdateTotalLegendaryDolls(newCount, success => {
+                        devSaveLegendaryDollsBtn.text = success ? "완료!" : "실패";
+                        devSaveLegendaryDollsBtn.SetEnabled(true);
+                        if (success && ClawMachine.Mechanics.GameFlowManager.Instance != null)
+                        {
+                            ClawMachine.Mechanics.GameFlowManager.Instance.totalLegendaryDolls = newCount;
+                            ClawMachine.Mechanics.GameFlowManager.Instance.UpdateStatsUI();
+                            RefreshDevProbabilitySummary();
+                        }
+                    }));
                 };
             }
 
@@ -819,7 +842,8 @@ namespace ClawMachine.UI
                         totalRegistrations = 0,
                         totalPlays = 0,
                         totalSuccesses = 0,
-                        totalDolls = (ClawMachine.Mechanics.GameFlowManager.Instance != null) ? ClawMachine.Mechanics.GameFlowManager.Instance.totalDolls : 100
+                        totalDolls = (ClawMachine.Mechanics.GameFlowManager.Instance != null) ? ClawMachine.Mechanics.GameFlowManager.Instance.totalDolls : 100,
+                        totalLegendaryDolls = (ClawMachine.Mechanics.GameFlowManager.Instance != null) ? ClawMachine.Mechanics.GameFlowManager.Instance.totalLegendaryDolls : 10
                     };
 
                     StartCoroutine(ClawMachine.Mechanics.FirebaseRESTService.Instance.UpdateGameStats(
@@ -913,9 +937,9 @@ namespace ClawMachine.UI
             inputBio?.Blur();
 
             isDuplicateRegistration = false;
-            registeredName = inputName.value;
-            registeredInsta = inputInsta.value;
-            registeredBio = inputBio.value;
+            registeredName = inputName.value?.Trim();
+            registeredInsta = inputInsta.value?.Trim();
+            registeredBio = inputBio.value?.Trim();
 
             if (!ClawMachine.Mechanics.GameFlowManager.IsSupportedGender(registeredGender))
             {
@@ -924,17 +948,11 @@ namespace ClawMachine.UI
                 return;
             }
 
-            bool isInstaRequired = true;
-            if (ClawMachine.Mechanics.GameFlowManager.Instance != null && ClawMachine.Mechanics.GameFlowManager.Instance.noInstaMode)
-            {
-                isInstaRequired = false;
-            }
-
-            if (string.IsNullOrEmpty(registeredName) || (isInstaRequired && string.IsNullOrEmpty(registeredInsta)))
+            if (string.IsNullOrEmpty(registeredName))
             {
                 if (registerWarningText != null)
                 {
-                    registerWarningText.text = isInstaRequired ? "이름과 인스타 아이디는 필수 입력 항목입니다." : "이름은 필수 입력 항목입니다.";
+                    registerWarningText.text = "이름은 필수 입력 항목입니다. 인스타 아이디는 선택 사항입니다.";
                     registerWarningText.style.display = DisplayStyle.Flex;
                 }
                 Debug.LogWarning("필수 입력 항목 누락.");
@@ -943,7 +961,7 @@ namespace ClawMachine.UI
 
             if (registerWarningText != null) registerWarningText.style.display = DisplayStyle.None;
 
-            if (registeredGender == "남" && ClawMachine.Mechanics.FirebaseRESTService.Instance != null)
+            if (!string.IsNullOrWhiteSpace(registeredInsta) && ClawMachine.Mechanics.FirebaseRESTService.Instance != null)
             {
                 if (registerSubmitBtn != null) registerSubmitBtn.SetEnabled(false);
                 
@@ -1851,10 +1869,11 @@ namespace ClawMachine.UI
 
         // ================= PUBLIC UI CONTROLLERS =================
 
-        public void SetStats(int instaCount, int dollCount, float winChance)
+        public void SetStats(int instaCount, int dollCount, int legendaryDollCount, float winChance)
         {
             if (instaCountText != null) instaCountText.text = $"{instaCount}개";
             if (dollCountText != null) dollCountText.text = $"{dollCount}개";
+            if (legendaryDollCountText != null) legendaryDollCountText.text = $"{legendaryDollCount}개";
             if (winChanceText != null) winChanceText.text = $"{winChance:F1}%";
         }
 
@@ -1941,9 +1960,8 @@ namespace ClawMachine.UI
 
             if (reward == ClawMachine.Mechanics.RewardType.Candy)
             {
-                // 뽑기 성공 but 사탕 당첨 (보상이 사탕)
-                if (popupFailSound != null && ClawMachine.Audio.SoundManager.Instance != null)
-                    ClawMachine.Audio.SoundManager.Instance.PlaySFX(popupFailSound);
+                if (popupSuccessSound != null && ClawMachine.Audio.SoundManager.Instance != null)
+                    ClawMachine.Audio.SoundManager.Instance.PlaySFX(popupSuccessSound);
 
                 matchedName.text = "사탕 당첨! 🍬";
                 matchedInsta.text = "달콤한 위로상";
@@ -1954,7 +1972,7 @@ namespace ClawMachine.UI
                 if (dollPickupNotice != null)
                     dollPickupNotice.style.display = DisplayStyle.None;
             }
-            else if (reward == ClawMachine.Mechanics.RewardType.IdOnly)
+            else if (reward == ClawMachine.Mechanics.RewardType.Instagram)
             {
                 // 아이디만
                 if (popupSuccessSound != null && ClawMachine.Audio.SoundManager.Instance != null)
@@ -1969,9 +1987,9 @@ namespace ClawMachine.UI
                 if (dollPickupNotice != null)
                     dollPickupNotice.style.display = DisplayStyle.None;
             }
-            else if (reward == ClawMachine.Mechanics.RewardType.DollOnly)
+            else if (reward == ClawMachine.Mechanics.RewardType.Doll)
             {
-                // 실물 인형만 당첨
+                // 일반 인형 당첨
                 if (popupSuccessSound != null && ClawMachine.Audio.SoundManager.Instance != null)
                     ClawMachine.Audio.SoundManager.Instance.PlaySFX(popupSuccessSound);
 
@@ -1984,18 +2002,17 @@ namespace ClawMachine.UI
                 if (dollPickupNotice != null)
                     dollPickupNotice.style.display = DisplayStyle.Flex;
             }
-            else
+            else if (reward == ClawMachine.Mechanics.RewardType.Legendary)
             {
-                // 인형 + 인스타
                 if (popupSuccessSound != null && ClawMachine.Audio.SoundManager.Instance != null)
                     ClawMachine.Audio.SoundManager.Instance.PlaySFX(popupSuccessSound);
 
-                matchedName.text = $"[인형+아이디] {name} ({gender})";
-                matchedInsta.text = insta;
-                matchedBio.text = string.IsNullOrEmpty(bio) ? "“인스타 친구해요!”" : $"“{bio}”";
+                matchedName.text = "레전더리 당첨! 🌟";
+                matchedInsta.text = "희귀한 레전더리 인형";
+                matchedBio.text = "“데스크에서 레전더리 인형을 받아가세요!”";
 
                 if (successSubTitle != null)
-                    successSubTitle.text = "축하합니다! 당신과 어울리는 이성의 인스타 카드입니다.";
+                    successSubTitle.text = "축하합니다! 레전더리 인형 보상이 당첨되었습니다.";
                 if (dollPickupNotice != null)
                     dollPickupNotice.style.display = DisplayStyle.Flex;
             }
@@ -2134,6 +2151,11 @@ namespace ClawMachine.UI
                         devTotalDollsInput.value = ClawMachine.Mechanics.GameFlowManager.Instance.totalDolls.ToString();
                         if (devSaveDollsBtn != null) devSaveDollsBtn.text = "저장";
                     }
+                    if (devTotalLegendaryDollsInput != null && ClawMachine.Mechanics.GameFlowManager.Instance != null)
+                    {
+                        devTotalLegendaryDollsInput.value = ClawMachine.Mechanics.GameFlowManager.Instance.totalLegendaryDolls.ToString();
+                        if (devSaveLegendaryDollsBtn != null) devSaveLegendaryDollsBtn.text = "저장";
+                    }
                     if (devCoinsInput != null)
                     {
                         devCoinsInput.value = currentCoins.ToString();
@@ -2191,22 +2213,57 @@ namespace ClawMachine.UI
             if (ClawMachine.Mechanics.GameFlowManager.Instance == null) return;
             var gm = ClawMachine.Mechanics.GameFlowManager.Instance;
             
-            if (mainNoInstaToggle != null) {
-                mainNoInstaToggle.value = gm.noInstaMode;
-            }
-
-            float pDollInsta = 0, pId = 0, pDoll = 0, pCandy = 0;
+            float pLegendary = 0, pDoll = 0, pInstagram = 0, pCandy = 0;
             switch(currentDevProbMode) {
                 case DevProbMode.Male:
-                    pDollInsta = gm.maleProbDollAndInsta; pId = gm.maleProbIdOnly; pDoll = gm.maleProbDollOnly; pCandy = gm.maleProbCandy; break;
+                    pLegendary = gm.maleProbLegendary; pDoll = gm.maleProbDoll; pInstagram = gm.maleProbInstagram; pCandy = gm.maleProbCandy; break;
                 case DevProbMode.Female:
-                    pDollInsta = gm.femaleProbDollAndInsta; pId = gm.femaleProbIdOnly; pDoll = gm.femaleProbDollOnly; pCandy = gm.femaleProbCandy; break;
+                    pLegendary = gm.femaleProbLegendary; pDoll = gm.femaleProbDoll; pInstagram = gm.femaleProbInstagram; pCandy = gm.femaleProbCandy; break;
             }
 
-            if (devProbDollInstaSlider != null) devProbDollInstaSlider.value = pDollInsta;
-            if (devProbIdOnlySlider != null) devProbIdOnlySlider.value = pId;
-            if (devProbDollOnlySlider != null) devProbDollOnlySlider.value = pDoll;
+            if (devProbLegendarySlider != null) devProbLegendarySlider.value = pLegendary;
+            if (devProbDollSlider != null) devProbDollSlider.value = pDoll;
+            if (devProbInstagramSlider != null) devProbInstagramSlider.value = pInstagram;
             if (devProbCandySlider != null) devProbCandySlider.value = pCandy;
+            RefreshDevProbabilitySummary();
+        }
+
+        private void RefreshDevProbabilitySummary()
+        {
+            if (ClawMachine.Mechanics.GameFlowManager.Instance == null) return;
+            var gm = ClawMachine.Mechanics.GameFlowManager.Instance;
+            string gender = currentDevProbMode == DevProbMode.Male ? "남" : "여";
+            if (!gm.TryGetGenderProbabilities(gender, out float legendary, out float doll, out float instagram, out float candy)) return;
+
+            float configuredTotal = legendary + doll + instagram + candy;
+            bool totalIsValid = Mathf.Approximately(configuredTotal, 100f);
+            if (devProbabilityTotalWarning != null)
+            {
+                devProbabilityTotalWarning.text = totalIsValid
+                    ? $"확률 합계: {configuredTotal:F1}%"
+                    : $"⚠ 확률 합계: {configuredTotal:F1}% (100%가 아닙니다)";
+                devProbabilityTotalWarning.style.color = totalIsValid
+                    ? new StyleColor(new Color(0.3f, 1f, 0.55f))
+                    : new StyleColor(new Color(1f, 0.85f, 0f));
+            }
+
+            float availableLegendary = gm.totalLegendaryDolls > 0 ? legendary : 0f;
+            SetProbabilityPreview(devProbabilityWithInstaPreview, "인스타 입력", availableLegendary, doll, instagram, candy);
+            SetProbabilityPreview(devProbabilityWithoutInstaPreview, "인스타 미입력", availableLegendary, doll, 0f, candy + instagram);
+        }
+
+        private static void SetProbabilityPreview(Label label, string title, float legendary, float doll, float instagram, float candy)
+        {
+            if (label == null) return;
+            float total = legendary + doll + instagram + candy;
+            if (total <= 0f)
+            {
+                label.text = $"{title}: 설정된 보상 확률이 없습니다.";
+                return;
+            }
+
+            label.text = $"{title}: 레전더리 {legendary / total * 100f:F1}% · 인형 {doll / total * 100f:F1}% · " +
+                         $"인스타 {instagram / total * 100f:F1}% · 사탕 {candy / total * 100f:F1}%";
         }
 
         private void HideOverlay(VisualElement overlay)

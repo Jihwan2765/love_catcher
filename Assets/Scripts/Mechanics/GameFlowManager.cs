@@ -7,10 +7,10 @@ namespace ClawMachine.Mechanics
 {
     public enum RewardType
     {
-        DollAndInsta,
-        IdOnly,
-        Candy,
-        DollOnly
+        Legendary,
+        Doll,
+        Instagram,
+        Candy
     }
 
     public class GameFlowManager : MonoBehaviour
@@ -28,21 +28,17 @@ namespace ClawMachine.Mechanics
         [Tooltip("천장이 발동할 누적 시도 횟수")]
         public int pityTriggerCount = 5;
         
-        [Header("Game Modes")]
-        [Tooltip("인스타 제외 모드 (인형과 사탕만 뽑힘)")]
-        public bool noInstaMode = false;
-        
         [Header("Male Specific Probabilities (%)")]
-        [Range(0f, 100f)] public float maleProbDollAndInsta = 20f;
-        [Range(0f, 100f)] public float maleProbIdOnly = 50f;
-        [Range(0f, 100f)] public float maleProbCandy = 20f;
-        [Range(0f, 100f)] public float maleProbDollOnly = 10f;
+        [Range(0f, 100f)] public float maleProbLegendary = 10f;
+        [Range(0f, 100f)] public float maleProbDoll = 20f;
+        [Range(0f, 100f)] public float maleProbInstagram = 40f;
+        [Range(0f, 100f)] public float maleProbCandy = 30f;
 
         [Header("Female Specific Probabilities (%)")]
-        [Range(0f, 100f)] public float femaleProbDollAndInsta = 20f;
-        [Range(0f, 100f)] public float femaleProbIdOnly = 30f;
-        [Range(0f, 100f)] public float femaleProbCandy = 20f;
-        [Range(0f, 100f)] public float femaleProbDollOnly = 30f;
+        [Range(0f, 100f)] public float femaleProbLegendary = 10f;
+        [Range(0f, 100f)] public float femaleProbDoll = 40f;
+        [Range(0f, 100f)] public float femaleProbInstagram = 20f;
+        [Range(0f, 100f)] public float femaleProbCandy = 30f;
         
         [Header("Mock Database (Firebase 연동 대기용)")]
         [Tooltip("남성 참가자 목록 (여성이 플레이할 때 매칭 대상)")]
@@ -65,6 +61,7 @@ namespace ClawMachine.Mechanics
 
         [Header("Game Statistics")]
         public int totalInstaCards = 20;
+        public int totalLegendaryDolls = 10;
         public int totalDolls = 100;
         public int totalAttempts = 0;
         public int oppositeGenderCount = 20;
@@ -118,6 +115,10 @@ namespace ClawMachine.Mechanics
             {
                 StartCoroutine(firebaseService.GetTotalDolls((count) => {
                     totalDolls = count;
+                    UpdateStatsUI();
+                }));
+                StartCoroutine(firebaseService.GetTotalLegendaryDolls((count) => {
+                    totalLegendaryDolls = count;
                     UpdateStatsUI();
                 }));
             }
@@ -198,7 +199,7 @@ namespace ClawMachine.Mechanics
             }
 
             // Firebase 실시간 등록 연동 (비동기)
-            if (firebaseService != null && !isDuplicateRegistration)
+            if (firebaseService != null && !isDuplicateRegistration && !string.IsNullOrWhiteSpace(insta))
             {
                 StartCoroutine(firebaseService.RegisterPlayer(name, insta, bio, gender, sessionAttempts, (success) => {
                     if (success)
@@ -313,42 +314,12 @@ namespace ClawMachine.Mechanics
             }
 
             string currentGender = ClawMachineUIManager.Instance.registeredGender;
-            string oppositeGender = currentGender == "남" ? "여" : "남";
-
-            bool isQueryFinished = false;
-            MatchedProfileResponse matchResult = new MatchedProfileResponse { success = false };
-
-            // Firebase 실시간 반대 성별 검색 쿼리 수행
-            if (firebaseService != null)
-            {
-                StartCoroutine(firebaseService.GetRandomMatch(oppositeGender, (result) => {
-                    matchResult = result;
-                    isQueryFinished = true;
-                }));
-            }
-            else
-            {
-                isQueryFinished = true;
-            }
-
-            // Firebase 응답 올 때까지 대기 (최대 3초 타임아웃 방어막 구축)
-            float timeout = 3f;
-            while (!isQueryFinished && timeout > 0)
-            {
-                timeout -= Time.deltaTime;
-                yield return null;
-            }
-
-            // 4가지 확률 계산 (인스펙터에서 설정한 확률 사용)
-            float roll = UnityEngine.Random.Range(0f, 100f);
-            RewardType reward = RewardType.Candy;
-
             if (!TryGetGenderProbabilities(
                     currentGender,
-                    out float currentProbDollAndInsta,
-                    out float currentProbIdOnly,
-                    out float currentProbCandy,
-                    out float currentProbDollOnly))
+                    out float legendaryWeight,
+                    out float dollWeight,
+                    out float instagramWeight,
+                    out float candyWeight))
             {
                 const string message = "성별 정보가 올바르지 않아 보상 추첨을 진행할 수 없습니다.";
                 Debug.LogError($"[보상 추첨 실패] 잘못된 성별 값: '{currentGender}'");
@@ -359,87 +330,88 @@ namespace ClawMachine.Mechanics
                 yield break;
             }
 
-            if (noInstaMode)
+            // 인스타 미입력 참가자는 인스타 몫을 사탕에 합산합니다.
+            bool hasInstagram = !string.IsNullOrWhiteSpace(ClawMachineUIManager.Instance.registeredInsta);
+            if (!hasInstagram)
             {
-                currentProbDollAndInsta = 0f;
-                currentProbIdOnly = 0f;
-            }
-            
-            // 실제 확률 비율 계산 (총합이 100이 아닐 경우를 대비해 보정)
-            float totalProb = currentProbDollAndInsta + currentProbIdOnly + currentProbCandy + currentProbDollOnly;
-            if (totalProb <= 0f) totalProb = 1f; // 0으로 나누기 방지
-            float rollTarget = roll * (totalProb / 100f);
-            
-            if (rollTarget < currentProbDollAndInsta) 
-            {
-                reward = RewardType.DollAndInsta;
-            }
-            else if (rollTarget < currentProbDollAndInsta + currentProbIdOnly) 
-            {
-                reward = RewardType.IdOnly;
-            }
-            else if (rollTarget < currentProbDollAndInsta + currentProbIdOnly + currentProbDollOnly)
-            {
-                reward = RewardType.DollOnly;
+                candyWeight += instagramWeight;
+                instagramWeight = 0f;
             }
 
-            // [보상 조정] 이성 아이디가 없거나 전부 뽑혔을 때 이성 아이디 보상 제외
-            if (oppositeGenderCount <= 0)
+            // 레전더리 재고가 없으면 해당 보상을 제외하고 나머지 비율대로 자동 정규화합니다.
+            if (totalLegendaryDolls <= 0)
             {
-                if (reward == RewardType.DollAndInsta)
-                {
-                    reward = RewardType.DollOnly;
-                    Debug.Log("[보상 조정] 이성 아이디가 없으므로 [실물 인형 + 인스타] -> [실물 인형만]으로 보상이 변경되었습니다.");
-                }
-                else if (reward == RewardType.IdOnly)
-                {
-                    reward = RewardType.Candy;
-                    Debug.Log("[보상 조정] 이성 아이디가 없으므로 [이성 아이디만] -> [꽝(사탕)]으로 보상이 변경되었습니다.");
-                }
+                legendaryWeight = 0f;
             }
 
-            // 매칭 정보 결정 (Firebase 연동 성공 시 DB 정보, 실패/오프라인 시 로컬 더미 Fallback)
-            if (matchResult.success)
-            {
-                // 보상 결과 팝업 띄우기
-                ClawMachineUIManager.Instance.ShowRewardPopup(reward, matchResult.name, matchResult.gender, matchResult.insta, matchResult.bio);
+            RewardType reward = RollReward(legendaryWeight, dollWeight, instagramWeight, candyWeight);
+            MatchedProfileResponse matchResult = new MatchedProfileResponse { success = false };
 
-                // 사탕이 아니면(인스타/아이디 획득) 실시간 뽑힘(잠금) 처리 PATCH 연동
-                if (reward != RewardType.Candy && firebaseService != null && !string.IsNullOrEmpty(matchResult.documentId))
+            // 인스타 보상이 실제 당첨된 경우에만 Firebase에서 지급 가능한 상대를 조회합니다.
+            if (reward == RewardType.Instagram)
+            {
+                bool isQueryFinished = false;
+                string oppositeGender = currentGender == "남" ? "여" : "남";
+
+                if (firebaseService != null)
                 {
-                    StartCoroutine(firebaseService.UpdatePickedStatus(matchResult.documentId, true, (updateSuccess) => {
-                        if (updateSuccess) Debug.Log($"[Firebase] {matchResult.name} 카드 실시간 잠금 완료");
+                    StartCoroutine(firebaseService.GetRandomMatch(oppositeGender, result => {
+                        matchResult = result;
+                        isQueryFinished = true;
                     }));
                 }
-            }
-            else
-            {
-                // Firebase DB 매칭에 실패했거나 오프라인일 때 안심하고 쓸 수 있는 Fallback 더미 데이터 매칭
-                Debug.LogWarning("[Firebase] 실시간 DB 매칭 불가. Local Fallback 더미 매칭으로 전환합니다.");
-                
-                // 만약 이성 아이디 개수가 0개 이하라면 강제로 더미 매칭도 방지
-                if (oppositeGenderCount <= 0)
+
+                float timeout = 3f;
+                while (!isQueryFinished && timeout > 0f)
                 {
-                    // 더미 매칭 없이 보상을 즉시 변경하여 팝업 띄우기
-                    ClawMachineUIManager.Instance.ShowRewardPopup(reward, "스태프", "여", "@love_catcher_staff", "행사장 스태프에게 문의해주세요!");
+                    timeout -= Time.deltaTime;
+                    yield return null;
+                }
+
+                bool canGiveInstagram = isQueryFinished && matchResult.success &&
+                                        !string.IsNullOrWhiteSpace(matchResult.insta) &&
+                                        !string.IsNullOrWhiteSpace(matchResult.documentId);
+                if (!canGiveInstagram)
+                {
+                    Debug.LogWarning("[보상 재추첨] 지급 가능한 이성 인스타가 없거나 Firebase 조회에 실패하여 인스타를 제외하고 재추첨합니다.");
+                    reward = RollReward(legendaryWeight, dollWeight, 0f, candyWeight);
                 }
                 else
                 {
-                    List<MatchedProfile> targets = currentGender == "남" ? femaleProfiles : maleProfiles;
-                    if (targets.Count > 0)
+                    bool isLockFinished = false;
+                    bool isLockSuccessful = false;
+                    StartCoroutine(firebaseService.UpdatePickedStatus(matchResult.documentId, true, updateSuccess => {
+                        isLockSuccessful = updateSuccess;
+                        isLockFinished = true;
+                    }));
+
+                    float lockTimeout = 3f;
+                    while (!isLockFinished && lockTimeout > 0f)
                     {
-                        MatchedProfile localMatch = targets[UnityEngine.Random.Range(0, targets.Count)];
-                        ClawMachineUIManager.Instance.ShowRewardPopup(reward, localMatch.name, localMatch.gender, localMatch.insta, localMatch.bio);
+                        lockTimeout -= Time.deltaTime;
+                        yield return null;
+                    }
+
+                    if (!isLockFinished || !isLockSuccessful)
+                    {
+                        Debug.LogWarning("[보상 재추첨] 인스타 카드 잠금에 실패하여 중복 지급을 막기 위해 인스타를 제외하고 재추첨합니다.");
+                        reward = RollReward(legendaryWeight, dollWeight, 0f, candyWeight);
                     }
                     else
                     {
-                        ClawMachineUIManager.Instance.ShowRewardPopup(reward, "스태프", "여", "@love_catcher_staff", "행사장 스태프에게 문의해주세요!");
+                        Debug.Log($"[Firebase] {matchResult.name} 카드 실시간 잠금 완료");
                     }
                 }
             }
 
-            // 데이터베이스 감소 처리 모방 및 UI 업데이트 (실물 인형 수량은 당첨 보상에 인형이 포함된 경우에만 차감)
-            if (reward == RewardType.DollAndInsta || reward == RewardType.DollOnly)
+            ClawMachineUIManager.Instance.ShowRewardPopup(
+                reward,
+                matchResult.name,
+                matchResult.gender,
+                matchResult.insta,
+                matchResult.bio);
+
+            if (reward == RewardType.Doll)
             {
                 totalDolls = Mathf.Max(0, totalDolls - 1);
                 if (firebaseService != null && !string.IsNullOrEmpty(firebaseService.firebaseProjectId))
@@ -454,14 +426,46 @@ namespace ClawMachine.Mechanics
                 }
             }
 
-            if (reward == RewardType.DollAndInsta || reward == RewardType.IdOnly)
+            else if (reward == RewardType.Legendary)
             {
-                totalInstaCards = Mathf.Max(0, totalInstaCards - 1);
-                if (reward == RewardType.IdOnly)
+                totalLegendaryDolls = Mathf.Max(0, totalLegendaryDolls - 1);
+                if (firebaseService != null && !string.IsNullOrEmpty(firebaseService.firebaseProjectId))
+                {
+                    StartCoroutine(firebaseService.UpdateTotalLegendaryDolls(totalLegendaryDolls, success => UpdateStatsUI()));
+                }
+                else
                 {
                     UpdateStatsUI();
                 }
             }
+            else if (reward == RewardType.Instagram)
+            {
+                totalInstaCards = Mathf.Max(0, totalInstaCards - 1);
+                UpdateStatsUI();
+            }
+        }
+
+        private RewardType RollReward(float legendary, float doll, float instagram, float candy)
+        {
+            legendary = Mathf.Max(0f, legendary);
+            doll = Mathf.Max(0f, doll);
+            instagram = Mathf.Max(0f, instagram);
+            candy = Mathf.Max(0f, candy);
+
+            float total = legendary + doll + instagram + candy;
+            if (total <= 0f)
+            {
+                Debug.LogError("[보상 추첨] 모든 보상 가중치가 0이므로 안전 보상인 사탕을 지급합니다.");
+                return RewardType.Candy;
+            }
+
+            float roll = UnityEngine.Random.Range(0f, total);
+            if (roll < legendary) return RewardType.Legendary;
+            roll -= legendary;
+            if (roll < doll) return RewardType.Doll;
+            roll -= doll;
+            if (roll < instagram) return RewardType.Instagram;
+            return RewardType.Candy;
         }
 
         /// <summary>
@@ -569,12 +573,18 @@ namespace ClawMachine.Mechanics
             float winChance = 0f;
             if (TryGetGenderProbabilities(
                     statsGender,
-                    out float dollAndInsta,
-                    out float idOnly,
-                    out _,
-                    out float dollOnly))
+                    out float legendary,
+                    out float doll,
+                    out float instagram,
+                    out float candy))
             {
-                winChance = dollAndInsta + idOnly + dollOnly;
+                if (totalLegendaryDolls <= 0) legendary = 0f;
+                bool hasInstagram = !string.IsNullOrWhiteSpace(ClawMachineUIManager.Instance.registeredInsta);
+                float total = legendary + doll + candy + instagram;
+                if (total > 0f)
+                {
+                    winChance = (legendary + doll + (hasInstagram ? instagram : 0f)) / total * 100f;
+                }
             }
 
             if (firebaseService != null && !string.IsNullOrEmpty(firebaseService.firebaseProjectId))
@@ -591,7 +601,7 @@ namespace ClawMachine.Mechanics
                         int oppositeCount = (currentGender == "남") ? femaleCount : maleCount;
                         oppositeGenderCount = oppositeCount; // 캐싱
                         
-                        ClawMachineUIManager.Instance.SetStats(oppositeCount, totalDolls, winChance);
+                        ClawMachineUIManager.Instance.SetStats(oppositeCount, totalDolls, totalLegendaryDolls, winChance);
                     }
                     else
                     {
@@ -601,7 +611,7 @@ namespace ClawMachine.Mechanics
                         if (string.IsNullOrEmpty(currentGender)) currentGender = "남";
                         oppositeGenderCount = (currentGender == "남") ? femaleProfiles.Count : maleProfiles.Count;
                         
-                        ClawMachineUIManager.Instance.SetStats(oppositeGenderCount, totalDolls, winChance);
+                        ClawMachineUIManager.Instance.SetStats(oppositeGenderCount, totalDolls, totalLegendaryDolls, winChance);
                     }
                 }));
             }
@@ -613,7 +623,7 @@ namespace ClawMachine.Mechanics
                 if (string.IsNullOrEmpty(currentGender)) currentGender = "남";
                 oppositeGenderCount = (currentGender == "남") ? femaleProfiles.Count : maleProfiles.Count;
                 
-                ClawMachineUIManager.Instance.SetStats(oppositeGenderCount, totalDolls, winChance);
+                ClawMachineUIManager.Instance.SetStats(oppositeGenderCount, totalDolls, totalLegendaryDolls, winChance);
             }
         }
 
@@ -624,33 +634,33 @@ namespace ClawMachine.Mechanics
 
         public bool TryGetGenderProbabilities(
             string gender,
-            out float dollAndInsta,
-            out float idOnly,
-            out float candy,
-            out float dollOnly)
+            out float legendary,
+            out float doll,
+            out float instagram,
+            out float candy)
         {
             if (gender == "남")
             {
-                dollAndInsta = maleProbDollAndInsta;
-                idOnly = maleProbIdOnly;
+                legendary = maleProbLegendary;
+                doll = maleProbDoll;
+                instagram = maleProbInstagram;
                 candy = maleProbCandy;
-                dollOnly = maleProbDollOnly;
                 return true;
             }
 
             if (gender == "여")
             {
-                dollAndInsta = femaleProbDollAndInsta;
-                idOnly = femaleProbIdOnly;
+                legendary = femaleProbLegendary;
+                doll = femaleProbDoll;
+                instagram = femaleProbInstagram;
                 candy = femaleProbCandy;
-                dollOnly = femaleProbDollOnly;
                 return true;
             }
 
-            dollAndInsta = 0f;
-            idOnly = 0f;
+            legendary = 0f;
+            doll = 0f;
+            instagram = 0f;
             candy = 0f;
-            dollOnly = 0f;
             return false;
         }
 
