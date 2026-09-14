@@ -2221,11 +2221,25 @@ namespace ClawMachine.UI
                     pLegendary = gm.femaleProbLegendary; pDoll = gm.femaleProbDoll; pInstagram = gm.femaleProbInstagram; pCandy = gm.femaleProbCandy; break;
             }
 
-            if (devProbLegendarySlider != null) devProbLegendarySlider.value = pLegendary;
-            if (devProbDollSlider != null) devProbDollSlider.value = pDoll;
-            if (devProbInstagramSlider != null) devProbInstagramSlider.value = pInstagram;
-            if (devProbCandySlider != null) devProbCandySlider.value = pCandy;
+            // 탭 전환/창 열기에서 화면만 갱신합니다. 일반 value 대입은 콜백을 발생시켜
+            // 다른 성별의 실제 확률을 UI 값으로 역덮어쓸 수 있으므로 사용하지 않습니다.
+            SetDevProbabilityControl(devProbLegendarySlider, devProbLegendaryInput, devProbLegendaryLabel, "레전더리", pLegendary);
+            SetDevProbabilityControl(devProbDollSlider, devProbDollInput, devProbDollLabel, "인형", pDoll);
+            SetDevProbabilityControl(devProbInstagramSlider, devProbInstagramInput, devProbInstagramLabel, "인스타 아이디", pInstagram);
+            SetDevProbabilityControl(devProbCandySlider, devProbCandyInput, devProbCandyLabel, "사탕", pCandy);
             RefreshDevProbabilitySummary();
+        }
+
+        private static void SetDevProbabilityControl(
+            Slider slider,
+            TextField input,
+            Label label,
+            string rewardName,
+            float value)
+        {
+            slider?.SetValueWithoutNotify(value);
+            input?.SetValueWithoutNotify(value.ToString("F1"));
+            if (label != null) label.text = $"[{rewardName}] 확률: {value:F1}%";
         }
 
         private void RefreshDevProbabilitySummary()

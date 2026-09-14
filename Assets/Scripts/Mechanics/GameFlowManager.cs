@@ -30,15 +30,15 @@ namespace ClawMachine.Mechanics
         
         [Header("Male Specific Probabilities (%)")]
         [Range(0f, 100f)] public float maleProbLegendary = 10f;
-        [Range(0f, 100f)] public float maleProbDoll = 20f;
+        [Range(0f, 100f)] public float maleProbDoll = 30f;
         [Range(0f, 100f)] public float maleProbInstagram = 40f;
-        [Range(0f, 100f)] public float maleProbCandy = 30f;
+        [Range(0f, 100f)] public float maleProbCandy = 20f;
 
         [Header("Female Specific Probabilities (%)")]
         [Range(0f, 100f)] public float femaleProbLegendary = 10f;
         [Range(0f, 100f)] public float femaleProbDoll = 40f;
-        [Range(0f, 100f)] public float femaleProbInstagram = 20f;
-        [Range(0f, 100f)] public float femaleProbCandy = 30f;
+        [Range(0f, 100f)] public float femaleProbInstagram = 30f;
+        [Range(0f, 100f)] public float femaleProbCandy = 20f;
         
         [Header("Mock Database (Firebase 연동 대기용)")]
         [Tooltip("남성 참가자 목록 (여성이 플레이할 때 매칭 대상)")]
@@ -73,6 +73,15 @@ namespace ClawMachine.Mechanics
         private bool isDollScoredThisAttempt = false;
         private List<GameObject> scoredDollsThisAttempt = new List<GameObject>();
 
+        private const float DefaultMaleLegendary = 10f;
+        private const float DefaultMaleDoll = 30f;
+        private const float DefaultMaleInstagram = 40f;
+        private const float DefaultMaleCandy = 20f;
+        private const float DefaultFemaleLegendary = 10f;
+        private const float DefaultFemaleDoll = 40f;
+        private const float DefaultFemaleInstagram = 30f;
+        private const float DefaultFemaleCandy = 20f;
+
         private void Awake()
         {
             if (Instance != null && Instance != this)
@@ -81,6 +90,23 @@ namespace ClawMachine.Mechanics
                 return;
             }
             Instance = this;
+
+            // C# 필드 초기값보다 Unity 씬에 직렬화된 과거 값이 우선 적용될 수 있습니다.
+            // 매 실행 시 승인된 기본값으로 시작하고, 이후 개발자 모드 변경은 현재 실행 동안 즉시 적용합니다.
+            ApplyDefaultProbabilities();
+        }
+
+        private void ApplyDefaultProbabilities()
+        {
+            maleProbLegendary = DefaultMaleLegendary;
+            maleProbDoll = DefaultMaleDoll;
+            maleProbInstagram = DefaultMaleInstagram;
+            maleProbCandy = DefaultMaleCandy;
+
+            femaleProbLegendary = DefaultFemaleLegendary;
+            femaleProbDoll = DefaultFemaleDoll;
+            femaleProbInstagram = DefaultFemaleInstagram;
+            femaleProbCandy = DefaultFemaleCandy;
         }
 
         private void Start()

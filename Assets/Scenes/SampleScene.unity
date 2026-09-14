@@ -5796,13 +5796,13 @@ MonoBehaviour:
   sessionTimeLimit: 60
   pityTriggerCount: 5
   maleProbLegendary: 10
-  maleProbDoll: 20
+  maleProbDoll: 30
   maleProbInstagram: 40
-  maleProbCandy: 30
+  maleProbCandy: 20
   femaleProbLegendary: 10
   femaleProbDoll: 40
-  femaleProbInstagram: 20
-  femaleProbCandy: 30
+  femaleProbInstagram: 30
+  femaleProbCandy: 20
   maleProfiles: []
   femaleProfiles: []
   totalInstaCards: 20
