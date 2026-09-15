@@ -16,6 +16,7 @@ namespace ClawMachine.UI
         public UIDocument uiDocument;
 
         // UI Elements - HUD
+        private VisualElement topBar;
         private Label instaCountText;
         private Label dollCountText;
         private Label legendaryDollCountText;
@@ -274,6 +275,7 @@ namespace ClawMachine.UI
             var root = uiDocument.rootVisualElement;
 
             // HUD
+            topBar = root.Q<VisualElement>("TopBar");
             instaCountText = root.Q<Label>("InstaCountText");
             dollCountText = root.Q<Label>("DollCountText");
             legendaryDollCountText = root.Q<Label>("LegendaryDollCountText");
@@ -1111,6 +1113,9 @@ namespace ClawMachine.UI
 
         private void ResetToRegistration()
         {
+            // 한 참가자의 세션이 끝나고 개인정보 입력 화면으로 돌아갈 때 HUD를 숨깁니다.
+            SetTopBarVisible(false);
+
             // Clear coin selection state
             ClearStagedCoins();
             retryPaymentOrigin = RetryPaymentOrigin.None;
@@ -2340,6 +2345,17 @@ namespace ClawMachine.UI
         public void HideAllOverlaysPublic()
         {
             HideAllOverlays();
+        }
+
+        /// <summary>
+        /// 현재 참가자의 전체 게임플레이 루프 동안 상단 HUD를 표시합니다.
+        /// </summary>
+        public void SetTopBarVisible(bool visible)
+        {
+            if (topBar != null)
+            {
+                topBar.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
+            }
         }
 
         public void ShowFailPopup()

@@ -1,7 +1,7 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
     <Style src="project://database/Assets/UI/ClawMachineStyle.uss?fileID=7433441132597879392&amp;guid=f49bda285d53df145943de288516cff7&amp;type=3#ClawMachineStyle" />
     <ui:VisualElement name="ScreenRoot" class="screen-container" style="justify-content: flex-start;">
-        <ui:VisualElement name="RegisterOverlay" class="overlay-screen" style="display: flex; flex-direction: row; justify-content: center; align-items: center; top: -4px; left: -1px; height: 1155px; width: 2131px;">
+        <ui:VisualElement name="RegisterOverlay" class="overlay-screen" style="display: flex; flex-direction: row; justify-content: center; align-items: center; top: -4px; left: -1px; height: 1155px; width: 1926px;">
             <ui:VisualElement name="RegisterCard" class="popup-card" style="margin-right: 40px;">
                 <ui:Label text="💘 사랑은 뽑기를 타고💘" class="popup-title" style="color: rgb(255, 215, 0);" />
                 <ui:VisualElement style="flex-direction: row; justify-content: center; margin-bottom: 16px;">
@@ -45,45 +45,6 @@
                 </ui:VisualElement>
                 <ui:Label text="입금 후 운영진에게 보여주세요." class="stat-value-highlight" style="margin-top: 10px; margin-bottom: 4px; -unity-text-align: middle-center; font-size: 16px; color: rgb(255, 215, 0);" />
                 <ui:Label name="RegisterAccountInfoText" text="🏦 토스뱅크 0000-0000-0000 홍길동 🏦" style="margin-bottom: 8px; -unity-text-align: middle-center; font-size: 14px; color: rgb(0, 238, 255); font-weight: bold;" />
-            </ui:VisualElement>
-        </ui:VisualElement>
-        <ui:VisualElement name="TopBar" class="top-bar">
-            <ui:VisualElement name="StatsPanel" class="glass-panel stats-panel" style="height: 205px;">
-                <ui:Label text="실시간 수량 현황" class="panel-title" />
-                <ui:VisualElement class="stat-row">
-                    <ui:Label text="남은 이성 아이디 개수" class="stat-label" />
-                    <ui:Label name="InstaCountText" text="0개" class="stat-value" />
-                </ui:VisualElement>
-                <ui:VisualElement class="stat-row">
-                    <ui:Label text="남은 실물 인형" class="stat-label" />
-                    <ui:Label name="DollCountText" text="0개" class="stat-value" />
-                </ui:VisualElement>
-                <ui:VisualElement class="stat-row">
-                    <ui:Label text="남은 레전더리 인형" class="stat-label" />
-                    <ui:Label name="LegendaryDollCountText" text="0개" class="stat-value" style="color: rgb(255, 215, 0);" />
-                </ui:VisualElement>
-            </ui:VisualElement>
-            <ui:VisualElement name="CoinDisplayPanel" class="glass-panel" style="width: 220px; align-items: center; justify-content: center; border-color: rgb(0, 238, 255); border-width: 2px; border-radius: 16px; border-top-width: 6px; border-top-color: rgb(0, 238, 255); background-color: rgba(15, 12, 30, 0.75); height: 132px;">
-                <ui:Label text="🪙 남은 코인 🪙" name="Label" style="font-size: 15px; color: rgba(255, 255, 255, 0.7); margin-bottom: 6px;" />
-                <ui:Label name="CoinCountText" text="0개" style="font-size: 28px; color: rgb(0, 238, 255); font-weight: bold; -unity-font-style: bold;" />
-            </ui:VisualElement>
-            <ui:VisualElement name="PityPanel" class="glass-panel pity-panel">
-                <ui:Label text="도전 상태" class="pity-title" />
-                <ui:VisualElement class="stat-row">
-                    <ui:Label text="누적 시도 횟수" class="stat-label" />
-                    <ui:Label name="AttemptCountText" text="0회" class="stat-value" />
-                </ui:VisualElement>
-                <ui:VisualElement class="stat-row">
-                    <ui:Label text="남은 제한 시간" class="stat-label" />
-                    <ui:Label name="TimerText" text="60s" class="stat-value-highlight" style="color: rgb(255, 59, 48);" />
-                </ui:VisualElement>
-                <ui:VisualElement class="pity-progress-container">
-                    <ui:VisualElement name="PityProgressBar" class="pity-progress-bar" />
-                </ui:VisualElement>
-                <ui:Label name="PityStatusText" text="5회차에 MAX 파워 발동! (0/5)" class="pity-status-text" />
-                <ui:VisualElement name="PityMaxBanner" class="pity-max-banner" style="display: none;">
-                    <ui:Label text="🔥 MAX 파워 모드 발동! 🔥" class="pity-max-text" />
-                </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
         <ui:VisualElement name="BottomBar" class="bottom-bar">
@@ -320,7 +281,7 @@
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
-        <ui:VisualElement name="RewardGuidePanel" class="glass-panel" style="position: absolute; left: 24px; bottom: 24px; width: 320px; border-left-width: 6px; border-left-color: rgb(255, 0, 128); padding: 12px 16px;">
+        <ui:VisualElement name="RewardGuidePanel" class="glass-panel" style="position: absolute; left: 24px; bottom: 24px; width: 320px; border-left-width: 6px; border-left-color: rgb(255, 0, 128); padding: 12px 16px; opacity: 1;">
             <ui:Label text="🎁 획득 가능한 보상 🎁" style="font-size: 20px; color: rgb(255, 0, 128); margin-bottom: 8px; font-weight: bold;" />
             <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 4px;">
                 <ui:Label text="•" style="color: rgb(255, 0, 0); margin-right: 6px; font-size: 14px;" />
@@ -337,6 +298,45 @@
             <ui:VisualElement style="flex-direction: row; align-items: center;">
                 <ui:Label text="•" style="color: rgb(0, 255, 24); margin-right: 6px; font-size: 14px;" />
                 <ui:Label text="4. 사탕" style="font-size: 13px; color: rgba(255, 255, 255, 0.9);" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="TopBar" class="top-bar" style="display: none;">
+            <ui:VisualElement name="StatsPanel" class="glass-panel stats-panel" style="height: 205px;">
+                <ui:Label text="실시간 수량 현황" class="panel-title" />
+                <ui:VisualElement class="stat-row">
+                    <ui:Label text="남은 이성 아이디 개수" class="stat-label" />
+                    <ui:Label name="InstaCountText" text="0개" class="stat-value" />
+                </ui:VisualElement>
+                <ui:VisualElement class="stat-row">
+                    <ui:Label text="남은 실물 인형" class="stat-label" />
+                    <ui:Label name="DollCountText" text="0개" class="stat-value" />
+                </ui:VisualElement>
+                <ui:VisualElement class="stat-row">
+                    <ui:Label text="남은 레전더리 인형" class="stat-label" />
+                    <ui:Label name="LegendaryDollCountText" text="0개" class="stat-value" style="color: rgb(255, 215, 0);" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+            <ui:VisualElement name="CoinDisplayPanel" class="glass-panel" style="width: 220px; align-items: center; justify-content: center; border-color: rgb(0, 238, 255); border-width: 2px; border-radius: 16px; border-top-width: 6px; border-top-color: rgb(0, 238, 255); background-color: rgba(15, 12, 30, 0.75); height: 132px;">
+                <ui:Label text="🪙 남은 코인 🪙" name="Label" style="font-size: 15px; color: rgba(255, 255, 255, 0.7); margin-bottom: 6px;" />
+                <ui:Label name="CoinCountText" text="0개" style="font-size: 28px; color: rgb(0, 238, 255); font-weight: bold; -unity-font-style: bold;" />
+            </ui:VisualElement>
+            <ui:VisualElement name="PityPanel" class="glass-panel pity-panel">
+                <ui:Label text="도전 상태" class="pity-title" />
+                <ui:VisualElement class="stat-row">
+                    <ui:Label text="누적 시도 횟수" class="stat-label" />
+                    <ui:Label name="AttemptCountText" text="0회" class="stat-value" />
+                </ui:VisualElement>
+                <ui:VisualElement class="stat-row">
+                    <ui:Label text="남은 제한 시간" class="stat-label" />
+                    <ui:Label name="TimerText" text="60s" class="stat-value-highlight" style="color: rgb(255, 59, 48);" />
+                </ui:VisualElement>
+                <ui:VisualElement class="pity-progress-container">
+                    <ui:VisualElement name="PityProgressBar" class="pity-progress-bar" />
+                </ui:VisualElement>
+                <ui:Label name="PityStatusText" text="5회차에 MAX 파워 발동! (0/5)" class="pity-status-text" />
+                <ui:VisualElement name="PityMaxBanner" class="pity-max-banner" style="display: none;">
+                    <ui:Label text="🔥 MAX 파워 모드 발동! 🔥" class="pity-max-text" />
+                </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
     </ui:VisualElement>

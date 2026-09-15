@@ -237,6 +237,9 @@ namespace ClawMachine.Mechanics
             scoredDollsThisAttempt.Clear();
             isGameActive = true;
 
+            // 개인정보 입력 완료부터 다음 참가자 입력 화면으로 돌아갈 때까지 HUD를 유지합니다.
+            ClawMachineUIManager.Instance.SetTopBarVisible(true);
+
             // UI HUD 업데이트
             ClawMachineUIManager.Instance.SetAttempts(sessionAttempts, pityTriggerCount);
             ClawMachineUIManager.Instance.SetTimer(timeRemaining);
@@ -284,6 +287,7 @@ namespace ClawMachine.Mechanics
             scoredDollsThisAttempt.Clear();
             timeRemaining = sessionTimeLimit;
             isGameActive = true;
+            ClawMachineUIManager.Instance.SetTopBarVisible(true);
 
             // HUD 업데이트
             ClawMachineUIManager.Instance.SetAttempts(sessionAttempts, pityTriggerCount);
@@ -554,6 +558,7 @@ namespace ClawMachine.Mechanics
             // 시간 다시 충전
             timeRemaining = sessionTimeLimit;
             isGameActive = true;
+            ClawMachineUIManager.Instance.SetTopBarVisible(true);
 
             // UI 업데이트
             ClawMachineUIManager.Instance.SetAttempts(sessionAttempts, pityTriggerCount);
@@ -591,6 +596,10 @@ namespace ClawMachine.Mechanics
         private void ResetGameSession()
         {
             isGameActive = false;
+            if (ClawMachineUIManager.Instance != null)
+            {
+                ClawMachineUIManager.Instance.SetTopBarVisible(false);
+            }
             sessionAttempts = 0;
             isDollScoredThisAttempt = false;
             scoredDollsThisAttempt.Clear();
