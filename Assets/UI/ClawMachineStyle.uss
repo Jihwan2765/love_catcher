@@ -257,9 +257,26 @@
     margin: 0;
 }
 
+/* 바깥 입력창 크기는 유지하고 내부 입력 영역이 테두리 안쪽 전체를 사용 */
+.registration-input {
+    padding: 0;
+}
+
 /* 시작 화면의 예시 문구와 실제 입력값은 볼드체로 통일 */
 .registration-input .unity-text-field__input {
     -unity-font-style: bold;
+    flex-grow: 1;
+    align-self: stretch;
+    width: 100%;
+    height: 100%;
+    padding: 6px 10px;
+    margin: 0;
+    border-width: 0;
+}
+
+/* 포커스 상태에서도 Unity 내부 입력 영역의 회색 테두리를 숨김 */
+.registration-input .unity-text-field__input:focus {
+    border-width: 0;
 }
 
 /* 예시 문구만 회색으로 표시하고 실제 입력값은 흰색으로 유지 */
