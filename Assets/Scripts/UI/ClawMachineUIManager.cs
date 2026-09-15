@@ -120,7 +120,6 @@ namespace ClawMachine.UI
 
         // Dev Mode Fields
         private Button devOpenDbViewBtn;
-        private Button devResetDbBtn;
         private Slider devGripForceSlider;
         private Label devGripForceLabel;
         private TextField devGripForceInput;
@@ -357,7 +356,6 @@ namespace ClawMachine.UI
 
             // Dev Mode Fields
             devOpenDbViewBtn = root.Q<Button>("DevOpenDbViewBtn");
-            devResetDbBtn = root.Q<Button>("DevResetDbBtn");
             devGripForceSlider = root.Q<Slider>("DevGripForceSlider");
             devGripForceLabel = root.Q<Label>("DevGripForceLabel");
             devGripForceInput = root.Q<TextField>("DevGripForceInput");
@@ -513,7 +511,6 @@ namespace ClawMachine.UI
 
             // Dev Mode Events
             if (devCloseBtn != null) devCloseBtn.clicked += () => { playBtnSound(); HideOverlay(devModeOverlay); };
-            if (devResetDbBtn != null) devResetDbBtn.clicked += () => { playBtnSound(); HandleDevResetDb(); };
             if (devOpenDbViewBtn != null) devOpenDbViewBtn.clicked += () => { playBtnSound(); OpenDbView(); };
 
             // Dev DB View Events
@@ -1292,28 +1289,6 @@ namespace ClawMachine.UI
                     }
                 }
                 ShowOverlay(devModeOverlay);
-            }
-        }
-
-        private void HandleDevResetDb()
-        {
-            if (ClawMachine.Mechanics.FirebaseRESTService.Instance != null && devResetDbBtn != null)
-            {
-                devResetDbBtn.text = "초기화 진행 중...";
-                devResetDbBtn.SetEnabled(false);
-                StartCoroutine(ClawMachine.Mechanics.FirebaseRESTService.Instance.ResetAllPickedStatus((success) => {
-                    devResetDbBtn.text = success ? "초기화 완료!" : "초기화 실패!";
-                    Invoke(nameof(RestoreDevResetBtnText), 2f);
-                }));
-            }
-        }
-
-        private void RestoreDevResetBtnText()
-        {
-            if (devResetDbBtn != null)
-            {
-                devResetDbBtn.text = "데이터베이스 유저 전원 상태 초기화 (isPicked = false)";
-                devResetDbBtn.SetEnabled(true);
             }
         }
 
