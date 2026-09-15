@@ -262,6 +262,12 @@
     background-color: rgba(0, 0, 0, 0.65); /* 포커스 시 좀 더 선명하게 대비 */
 }
 
+/* Developer mode numeric fields use a light background. Keep their values readable. */
+.input-field,
+.input-field .unity-text-field__input {
+    color: rgb(0, 0, 0);
+}
+
 /* Gender Selection Button Toggle */
 .gender-toggle-row {
     flex-direction: row;
