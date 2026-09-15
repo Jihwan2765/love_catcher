@@ -34,6 +34,7 @@ namespace ClawMachine.UI
         private VisualElement failOverlay;
         private VisualElement quitConfirmOverlay;
         private VisualElement devModeOverlay;
+        private VisualElement devResetStatsConfirmOverlay;
         private VisualElement devDbOverlay;
         private VisualElement failRetryOverlay;
 
@@ -161,6 +162,8 @@ namespace ClawMachine.UI
         private TextField devTotalSuccessesInput;
         private Button devSaveSuccessesBtn;
         private Button devResetStatsBtn;
+        private Button devResetStatsConfirmBtn;
+        private Button devResetStatsCancelBtn;
 
         // Dev DB View Fields
         private ScrollView devDbScrollView;
@@ -283,6 +286,7 @@ namespace ClawMachine.UI
             failOverlay = root.Q<VisualElement>("FailOverlay");
             quitConfirmOverlay = root.Q<VisualElement>("QuitConfirmOverlay");
             devModeOverlay = root.Q<VisualElement>("DevModeOverlay");
+            devResetStatsConfirmOverlay = root.Q<VisualElement>("DevResetStatsConfirmOverlay");
             devDbOverlay = root.Q<VisualElement>("DevDbOverlay");
             failRetryOverlay = root.Q<VisualElement>("FailRetryOverlay");
 
@@ -387,6 +391,8 @@ namespace ClawMachine.UI
             devTotalSuccessesInput = root.Q<TextField>("DevTotalSuccessesInput");
             devSaveSuccessesBtn = root.Q<Button>("DevSaveSuccessesBtn");
             devResetStatsBtn = root.Q<Button>("DevResetStatsBtn");
+            devResetStatsConfirmBtn = root.Q<Button>("DevResetStatsConfirmBtn");
+            devResetStatsCancelBtn = root.Q<Button>("DevResetStatsCancelBtn");
 
             // Dev DB View Fields
             devDbScrollView = root.Q<ScrollView>("DevDbScrollView");
@@ -882,28 +888,23 @@ namespace ClawMachine.UI
             {
                 devResetStatsBtn.clicked += () => {
                     playBtnSound();
-                    devResetStatsBtn.text = "초기화 진행 중...";
-                    devResetStatsBtn.SetEnabled(false);
-                    
-                    var zeroStats = new ClawMachine.Mechanics.GameStatsData
-                    {
-                        totalRevenue = 0,
-                        totalRegistrations = 0,
-                        totalPlays = 0,
-                        totalSuccesses = 0,
-                        totalDolls = (ClawMachine.Mechanics.GameFlowManager.Instance != null) ? ClawMachine.Mechanics.GameFlowManager.Instance.totalDolls : 100,
-                        totalLegendaryDolls = (ClawMachine.Mechanics.GameFlowManager.Instance != null) ? ClawMachine.Mechanics.GameFlowManager.Instance.totalLegendaryDolls : 10
-                    };
+                    ShowDevStatsResetConfirmation();
+                };
+            }
 
-                    StartCoroutine(ClawMachine.Mechanics.FirebaseRESTService.Instance.UpdateGameStats(
-                        zeroStats, 
-                        new System.Collections.Generic.List<string> { "totalRevenue", "totalRegistrations", "totalPlays", "totalSuccesses" }, 
-                        success => {
-                            devResetStatsBtn.text = success ? "통계 초기화 완료!" : "통계 초기화 실패";
-                            devResetStatsBtn.SetEnabled(true);
-                            RefreshDevModeStats();
-                            Invoke(nameof(RestoreDevResetStatsBtnText), 2f);
-                        }));
+            if (devResetStatsCancelBtn != null)
+            {
+                devResetStatsCancelBtn.clicked += () => {
+                    playBtnSound();
+                    HideDevStatsResetConfirmation();
+                };
+            }
+
+            if (devResetStatsConfirmBtn != null)
+            {
+                devResetStatsConfirmBtn.clicked += () => {
+                    playBtnSound();
+                    BeginDevStatsReset();
                 };
             }
 
@@ -1554,6 +1555,7 @@ namespace ClawMachine.UI
             BottomBar,
             Success,
             QuitConfirm,
+            DevStatsResetConfirm,
             Fail
         }
 
@@ -1656,6 +1658,14 @@ namespace ClawMachine.UI
             else if (button == quitConfirmYesBtn)
             {
                 HandleQuitConfirmYesClick();
+            }
+            else if (button == devResetStatsCancelBtn)
+            {
+                HideDevStatsResetConfirmation();
+            }
+            else if (button == devResetStatsConfirmBtn)
+            {
+                BeginDevStatsReset();
             }
             else if (button == failCloseBtn)
             {
@@ -2259,6 +2269,7 @@ namespace ClawMachine.UI
             HideOverlay(failOverlay);
             HideOverlay(quitConfirmOverlay);
             HideOverlay(devModeOverlay);
+            HideOverlay(devResetStatsConfirmOverlay);
             HideOverlay(devDbOverlay);
             HideOverlay(failRetryOverlay);
         }
@@ -2303,6 +2314,12 @@ namespace ClawMachine.UI
                 else if (overlay == quitConfirmOverlay)
                 {
                     SetNavigationGroup(NavGroup.QuitConfirm, new Button[] { quitConfirmNoBtn, quitConfirmYesBtn });
+                }
+                else if (overlay == devResetStatsConfirmOverlay)
+                {
+                    SetNavigationGroup(
+                        NavGroup.DevStatsResetConfirm,
+                        new Button[] { devResetStatsCancelBtn, devResetStatsConfirmBtn });
                 }
                 else if (overlay == failOverlay)
                 {
@@ -2407,6 +2424,49 @@ namespace ClawMachine.UI
 
         // ================= STATS HELPERS & ADJUSTMENTS =================
 
+        private void ShowDevStatsResetConfirmation()
+        {
+            var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
+            if (firebase == null || firebase.IsWriteInProgress) return;
+
+            ShowOverlay(devResetStatsConfirmOverlay);
+        }
+
+        private void HideDevStatsResetConfirmation()
+        {
+            HideOverlay(devResetStatsConfirmOverlay);
+            SetNavigationGroup(NavGroup.None, null);
+        }
+
+        private void BeginDevStatsReset()
+        {
+            var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
+            if (firebase == null || firebase.IsWriteInProgress) return;
+
+            HideDevStatsResetConfirmation();
+            devResetStatsBtn.text = "초기화 진행 중...";
+            devResetStatsBtn.SetEnabled(false);
+
+            var zeroStats = new ClawMachine.Mechanics.GameStatsData
+            {
+                totalRevenue = 0,
+                totalPlays = 0,
+                totalSuccesses = 0,
+                totalDolls = (ClawMachine.Mechanics.GameFlowManager.Instance != null) ? ClawMachine.Mechanics.GameFlowManager.Instance.totalDolls : 100,
+                totalLegendaryDolls = (ClawMachine.Mechanics.GameFlowManager.Instance != null) ? ClawMachine.Mechanics.GameFlowManager.Instance.totalLegendaryDolls : 10
+            };
+
+            StartCoroutine(firebase.UpdateGameStats(
+                zeroStats,
+                new System.Collections.Generic.List<string> { "totalRevenue", "totalPlays", "totalSuccesses" },
+                success => {
+                    devResetStatsBtn.text = success ? "통계 초기화 완료!" : "통계 초기화 실패";
+                    devResetStatsBtn.SetEnabled(true);
+                    RefreshDevModeStats();
+                    Invoke(nameof(RestoreDevResetStatsBtnText), 2f);
+                }));
+        }
+
         private void RefreshDevModeStats()
         {
             if (ClawMachine.Mechanics.FirebaseRESTService.Instance == null) return;
@@ -2433,7 +2493,7 @@ namespace ClawMachine.UI
         {
             if (devResetStatsBtn != null)
             {
-                devResetStatsBtn.text = "📈 통계 데이터 전체 초기화 (0으로 리셋) 📈";
+                devResetStatsBtn.text = "통계 데이터 초기화 (0으로 리셋)";
             }
         }
 

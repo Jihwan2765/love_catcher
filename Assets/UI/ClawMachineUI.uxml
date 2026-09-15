@@ -168,6 +168,7 @@
                         <ui:Label name="DevStatPlays" text="총 플레이 횟수: 0회" class="form-label" style="color: rgb(255, 0, 128); margin-bottom: 4px; font-size: 13px;" />
                         <ui:Label name="DevStatSuccesses" text="총 성공(뽑기) 횟수: 0회" class="form-label" style="color: rgb(50, 255, 100); margin-bottom: 8px; font-size: 13px;" />
                         <ui:Label name="DevStatRevenue" text="총 누적 수입: 0원" class="form-label" style="color: rgb(255, 215, 0); font-size: 15px; font-weight: bold; margin-bottom: 0;" />
+                        <ui:Button name="DevResetStatsBtn" text="통계 데이터 초기화 (0으로 리셋)" class="btn-secondary" style="height: 36px; margin-top: 12px; font-size: 13px; border-color: rgb(255, 59, 48); font-weight: bold; color: rgb(255, 59, 48);" />
                     </ui:VisualElement>
                     <ui:VisualElement class="form-field" style="margin-top: 16px;">
                         <ui:Label text="물리 엔진 설정" class="form-label" style="color: rgb(0, 238, 255); font-size: 16px; font-weight: bold;" />
@@ -256,10 +257,21 @@
                                 <ui:Button name="DevSaveSuccessesBtn" text="저장" class="btn-primary" style="width: 60px; height: 32px; font-size: 12px; margin-bottom: 8px;" />
                             </ui:VisualElement>
                         </ui:VisualElement>
-                        <ui:Button name="DevResetStatsBtn" text="📈 통계 데이터 전체 초기화 (0으로 리셋) 📈" class="btn-secondary" style="height: 36px; margin-top: 12px; font-size: 13px; border-color: rgb(255, 59, 48); font-weight: bold; color: rgb(255, 59, 48);" />
                     </ui:VisualElement>
                 </ui:ScrollView>
                 <ui:Button name="DevCloseBtn" text="닫기" class="btn-primary" style="margin-top: 0; width: 100%;" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="DevResetStatsConfirmOverlay" class="overlay-screen" style="display: none;">
+            <ui:VisualElement class="popup-card" style="width: 500px; background-color: rgb(18, 14, 28); border-color: rgb(255, 59, 48); border-width: 3px;">
+                <ui:Label text="⚠ 통계 데이터 초기화" class="popup-title" style="color: rgb(255, 59, 48); font-size: 24px; -unity-text-align: middle-center; margin-bottom: 18px;" />
+                <ui:Label text="다음 내용을 초기화합니다." class="form-label" style="color: rgb(255, 255, 255); font-size: 16px; -unity-text-align: middle-center; margin-bottom: 14px;" />
+                <ui:Label text="1. 총 플레이 횟수&#10;2. 총 성공 횟수&#10;3. 총 누적 수입" class="form-label" style="width: 100%; color: rgb(255, 215, 0); font-size: 17px; line-height: 26px; -unity-text-align: middle-left; margin-left: 70px; margin-bottom: 18px;" />
+                <ui:Label text="진행하시겠습니까?" class="form-label" style="color: rgb(255, 255, 255); font-size: 18px; font-weight: bold; -unity-text-align: middle-center; margin-bottom: 24px;" />
+                <ui:VisualElement style="width: 100%; flex-direction: row; justify-content: center;">
+                    <ui:Button name="DevResetStatsCancelBtn" text="취소" class="btn-secondary" style="width: 150px; height: 46px; margin-right: 8px; font-size: 16px;" />
+                    <ui:Button name="DevResetStatsConfirmBtn" text="초기화 진행" class="btn-primary" style="width: 150px; height: 46px; margin-left: 8px; font-size: 16px; background-color: rgb(190, 25, 25); border-color: rgb(255, 90, 90);" />
+                </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
         <ui:VisualElement name="DevDbOverlay" class="overlay-screen" style="display: none;">
