@@ -257,6 +257,17 @@
     margin: 0;
 }
 
+/* 시작 화면의 예시 문구와 실제 입력값은 볼드체로 통일 */
+.registration-input .unity-text-field__input {
+    -unity-font-style: bold;
+}
+
+/* 예시 문구만 회색으로 표시하고 실제 입력값은 흰색으로 유지 */
+.registration-input .unity-base-text-field__input--placeholder {
+    color: rgb(145, 145, 155);
+    -unity-font-style: bold;
+}
+
 .form-input:focus {
     border-color: var(--color-neon-cyan);
     background-color: rgba(0, 0, 0, 0.65); /* 포커스 시 좀 더 선명하게 대비 */
