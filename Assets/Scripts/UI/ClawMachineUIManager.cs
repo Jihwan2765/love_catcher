@@ -36,6 +36,7 @@ namespace ClawMachine.UI
         private VisualElement devModeOverlay;
         private VisualElement devResetStatsConfirmOverlay;
         private VisualElement devDbOverlay;
+        private VisualElement devDeleteParticipantConfirmOverlay;
         private VisualElement failRetryOverlay;
 
         // Registration Card Fields
@@ -171,6 +172,12 @@ namespace ClawMachine.UI
         private Button devDbCloseBtn;
         private TextField devDbSearchInput;
         private Button devReloadSceneBtn;
+        private Label devDeleteParticipantTargetLabel;
+        private Label devDeleteParticipantStatusLabel;
+        private Button devDeleteParticipantConfirmBtn;
+        private Button devDeleteParticipantCancelBtn;
+        private ClawMachine.Mechanics.ParticipantData? pendingDeleteParticipant;
+        private VisualElement pendingDeleteParticipantRow;
         private System.Collections.Generic.List<ClawMachine.Mechanics.ParticipantData> cachedDbData = new System.Collections.Generic.List<ClawMachine.Mechanics.ParticipantData>();
 
         private struct SceneRecoveryData
@@ -288,6 +295,7 @@ namespace ClawMachine.UI
             devModeOverlay = root.Q<VisualElement>("DevModeOverlay");
             devResetStatsConfirmOverlay = root.Q<VisualElement>("DevResetStatsConfirmOverlay");
             devDbOverlay = root.Q<VisualElement>("DevDbOverlay");
+            devDeleteParticipantConfirmOverlay = root.Q<VisualElement>("DevDeleteParticipantConfirmOverlay");
             failRetryOverlay = root.Q<VisualElement>("FailRetryOverlay");
 
             // Register Panel Fields
@@ -398,6 +406,10 @@ namespace ClawMachine.UI
             devDbScrollView = root.Q<ScrollView>("DevDbScrollView");
             devDbRefreshBtn = root.Q<Button>("DevDbRefreshBtn");
             devDbCloseBtn = root.Q<Button>("DevDbCloseBtn");
+            devDeleteParticipantTargetLabel = root.Q<Label>("DevDeleteParticipantTargetLabel");
+            devDeleteParticipantStatusLabel = root.Q<Label>("DevDeleteParticipantStatusLabel");
+            devDeleteParticipantConfirmBtn = root.Q<Button>("DevDeleteParticipantConfirmBtn");
+            devDeleteParticipantCancelBtn = root.Q<Button>("DevDeleteParticipantCancelBtn");
 
             // Dev DB 직접 등록 폼 Fields
             devAddName = root.Q<TextField>("DevAddName");
@@ -507,6 +519,10 @@ namespace ClawMachine.UI
             // Dev DB View Events
             if (devDbCloseBtn != null) devDbCloseBtn.clicked += () => { playBtnSound(); CloseDbView(); };
             if (devDbRefreshBtn != null) devDbRefreshBtn.clicked += () => { playBtnSound(); RefreshDbView(); };
+            if (devDeleteParticipantCancelBtn != null)
+                devDeleteParticipantCancelBtn.clicked += () => { playBtnSound(); HideDevDeleteParticipantConfirmation(); };
+            if (devDeleteParticipantConfirmBtn != null)
+                devDeleteParticipantConfirmBtn.clicked += () => { playBtnSound(); BeginDevParticipantDelete(); };
 
             // Dev DB 직접 등록 폼 Events
             if (devAddGenderMaleBtn != null)
@@ -1508,19 +1524,7 @@ namespace ClawMachine.UI
             };
 
             deleteBtn.clicked += () => {
-                deleteBtn.text = "...";
-                deleteBtn.SetEnabled(false);
-                StartCoroutine(ClawMachine.Mechanics.FirebaseRESTService.Instance.DeleteParticipant(data.documentId, success => {
-                    if (success)
-                    {
-                        row.RemoveFromHierarchy();
-                    }
-                    else
-                    {
-                        deleteBtn.text = "실패";
-                        deleteBtn.SetEnabled(true);
-                    }
-                }));
+                ShowDevDeleteParticipantConfirmation(data, row);
             };
 
             row.Add(nameInput);
@@ -1532,6 +1536,126 @@ namespace ClawMachine.UI
             row.Add(deleteBtn);
 
             return row;
+        }
+
+        private void ShowDevDeleteParticipantConfirmation(
+            ClawMachine.Mechanics.ParticipantData participant,
+            VisualElement participantRow)
+        {
+            if (string.IsNullOrEmpty(participant.documentId)) return;
+
+            pendingDeleteParticipant = participant;
+            pendingDeleteParticipantRow = participantRow;
+
+            if (devDeleteParticipantTargetLabel != null)
+            {
+                string displayName = string.IsNullOrWhiteSpace(participant.name) ? "(이름 없음)" : participant.name;
+                string displayInsta = string.IsNullOrWhiteSpace(participant.insta) ? "(미입력)" : participant.insta;
+                devDeleteParticipantTargetLabel.text = $"이름: {displayName}\n인스타 아이디: {displayInsta}";
+            }
+
+            var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
+            bool canDelete = firebase != null && !firebase.IsWriteInProgress;
+            if (devDeleteParticipantStatusLabel != null)
+            {
+                devDeleteParticipantStatusLabel.text = canDelete
+                    ? ""
+                    : "다른 Firebase 저장 작업이 진행 중입니다. 완료 후 다시 시도해 주세요.";
+                devDeleteParticipantStatusLabel.style.display = canDelete
+                    ? DisplayStyle.None
+                    : DisplayStyle.Flex;
+            }
+
+            if (devDeleteParticipantConfirmBtn != null)
+            {
+                devDeleteParticipantConfirmBtn.text = "삭제 진행";
+                devDeleteParticipantConfirmBtn.SetEnabled(canDelete);
+            }
+            if (devDeleteParticipantCancelBtn != null)
+            {
+                devDeleteParticipantCancelBtn.SetEnabled(true);
+            }
+
+            ShowOverlay(devDeleteParticipantConfirmOverlay);
+        }
+
+        private void HideDevDeleteParticipantConfirmation()
+        {
+            HideOverlay(devDeleteParticipantConfirmOverlay);
+            ClearPendingParticipantDelete();
+            SetNavigationGroup(NavGroup.None, null);
+        }
+
+        private void ClearPendingParticipantDelete()
+        {
+            pendingDeleteParticipant = null;
+            pendingDeleteParticipantRow = null;
+
+            if (devDeleteParticipantTargetLabel != null)
+                devDeleteParticipantTargetLabel.text = "이름: -\n인스타 아이디: -";
+            if (devDeleteParticipantStatusLabel != null)
+                devDeleteParticipantStatusLabel.style.display = DisplayStyle.None;
+            if (devDeleteParticipantConfirmBtn != null)
+            {
+                devDeleteParticipantConfirmBtn.text = "삭제 진행";
+                devDeleteParticipantConfirmBtn.SetEnabled(true);
+            }
+            if (devDeleteParticipantCancelBtn != null)
+                devDeleteParticipantCancelBtn.SetEnabled(true);
+        }
+
+        private void BeginDevParticipantDelete()
+        {
+            var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
+            if (!pendingDeleteParticipant.HasValue || firebase == null) return;
+
+            if (firebase.IsWriteInProgress)
+            {
+                if (devDeleteParticipantStatusLabel != null)
+                {
+                    devDeleteParticipantStatusLabel.text = "다른 Firebase 저장 작업이 진행 중입니다. 완료 후 다시 시도해 주세요.";
+                    devDeleteParticipantStatusLabel.style.display = DisplayStyle.Flex;
+                }
+                return;
+            }
+
+            var participantToDelete = pendingDeleteParticipant.Value;
+            var rowToDelete = pendingDeleteParticipantRow;
+
+            if (devDeleteParticipantConfirmBtn != null)
+            {
+                devDeleteParticipantConfirmBtn.text = "Firebase 삭제 중...";
+                devDeleteParticipantConfirmBtn.SetEnabled(false);
+            }
+            if (devDeleteParticipantCancelBtn != null)
+                devDeleteParticipantCancelBtn.SetEnabled(false);
+            if (devDeleteParticipantStatusLabel != null)
+                devDeleteParticipantStatusLabel.style.display = DisplayStyle.None;
+
+            StartCoroutine(firebase.DeleteParticipant(participantToDelete.documentId, success => {
+                if (success)
+                {
+                    cachedDbData.RemoveAll(item => item.documentId == participantToDelete.documentId);
+                    if (rowToDelete != null && rowToDelete.parent != null)
+                        rowToDelete.RemoveFromHierarchy();
+                    HideDevDeleteParticipantConfirmation();
+                    RefreshDevModeStats();
+                    return;
+                }
+
+                if (devDeleteParticipantStatusLabel != null)
+                {
+                    devDeleteParticipantStatusLabel.text = "Firebase 삭제에 실패했습니다. 연결 상태를 확인한 후 다시 시도해 주세요.";
+                    devDeleteParticipantStatusLabel.style.display = DisplayStyle.Flex;
+                }
+                if (devDeleteParticipantConfirmBtn != null)
+                {
+                    devDeleteParticipantConfirmBtn.text = "다시 시도";
+                    devDeleteParticipantConfirmBtn.SetEnabled(true);
+                }
+                if (devDeleteParticipantCancelBtn != null)
+                    devDeleteParticipantCancelBtn.SetEnabled(true);
+            }));
         }
 
         public bool IsUserTyping()
@@ -1556,6 +1680,7 @@ namespace ClawMachine.UI
             Success,
             QuitConfirm,
             DevStatsResetConfirm,
+            DevParticipantDeleteConfirm,
             Fail
         }
 
@@ -1666,6 +1791,14 @@ namespace ClawMachine.UI
             else if (button == devResetStatsConfirmBtn)
             {
                 BeginDevStatsReset();
+            }
+            else if (button == devDeleteParticipantCancelBtn)
+            {
+                HideDevDeleteParticipantConfirmation();
+            }
+            else if (button == devDeleteParticipantConfirmBtn)
+            {
+                BeginDevParticipantDelete();
             }
             else if (button == failCloseBtn)
             {
@@ -2271,6 +2404,8 @@ namespace ClawMachine.UI
             HideOverlay(devModeOverlay);
             HideOverlay(devResetStatsConfirmOverlay);
             HideOverlay(devDbOverlay);
+            HideOverlay(devDeleteParticipantConfirmOverlay);
+            ClearPendingParticipantDelete();
             HideOverlay(failRetryOverlay);
         }
 
@@ -2320,6 +2455,12 @@ namespace ClawMachine.UI
                     SetNavigationGroup(
                         NavGroup.DevStatsResetConfirm,
                         new Button[] { devResetStatsCancelBtn, devResetStatsConfirmBtn });
+                }
+                else if (overlay == devDeleteParticipantConfirmOverlay)
+                {
+                    SetNavigationGroup(
+                        NavGroup.DevParticipantDeleteConfirm,
+                        new Button[] { devDeleteParticipantCancelBtn, devDeleteParticipantConfirmBtn });
                 }
                 else if (overlay == failOverlay)
                 {
