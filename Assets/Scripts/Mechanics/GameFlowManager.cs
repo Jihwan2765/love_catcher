@@ -390,10 +390,14 @@ namespace ClawMachine.Mechanics
                 yield break;
             }
 
-            // 레전더리 재고가 없으면 해당 보상을 제외하고 나머지 비율대로 자동 정규화합니다.
+            // 재고가 없는 인형 보상을 제외하고 나머지 비율대로 자동 정규화합니다.
             if (totalLegendaryDolls <= 0)
             {
                 legendaryWeight = 0f;
+            }
+            if (totalDolls <= 0)
+            {
+                dollWeight = 0f;
             }
 
             RewardType reward = RollReward(legendaryWeight, dollWeight, instagramWeight, candyWeight);
@@ -638,6 +642,7 @@ namespace ClawMachine.Mechanics
                     out float candy))
             {
                 if (totalLegendaryDolls <= 0) legendary = 0f;
+                if (totalDolls <= 0) doll = 0f;
                 float total = legendary + doll + candy + instagram;
                 if (total > 0f)
                 {
