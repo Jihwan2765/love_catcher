@@ -10,6 +10,12 @@ namespace ClawMachine.Mechanics
 {
     public class FirebaseRESTService : MonoBehaviour
     {
+        [Serializable] private class ClaimFields { public FirestoreStringField stockField, targetKey; }
+        [Serializable] private class ClaimReceipt { public ClaimFields fields; }
+        [Serializable] private class CountFields { public FirestoreIntField count; }
+        [Serializable] private class AggregateValue { public CountFields aggregateFields; }
+        [Serializable] private class AggregateItem { public AggregateValue result; }
+        [Serializable] private class AggregateItems { public AggregateItem[] items; }
         private static FirebaseRESTService instance;
         public static FirebaseRESTService Instance
         {
@@ -48,6 +54,20 @@ namespace ClawMachine.Mechanics
         private void EndWriteOperation()
         {
             activeWriteOperationCount = Mathf.Max(0, activeWriteOperationCount - 1);
+        }
+
+        private IEnumerator SendAuthorized(UnityWebRequest request)
+        {
+            string token = null;
+            yield return BoothStaffAuth.Instance.EnsureIdToken(value => token = value);
+            if (string.IsNullOrEmpty(token))
+            {
+                Debug.LogWarning("[Firebase] 스태프 로그인이 필요하여 요청을 중단했습니다.");
+                yield break;
+            }
+            request.timeout = 15;
+            request.SetRequestHeader("Authorization", "Bearer " + token);
+            yield return request.SendWebRequest();
         }
 
         private void Awake()
@@ -107,60 +127,70 @@ namespace ClawMachine.Mechanics
         /// </summary>
         public IEnumerator RegisterPlayer(string name, string insta, string bio, string gender, int attempts, Action<bool> callback)
         {
-            if (string.IsNullOrEmpty(firebaseProjectId))
+            string handle = (insta ?? "").Trim().TrimStart('@').ToLowerInvariant();
+            if (string.IsNullOrEmpty(firebaseProjectId) || handle.Length == 0 || handle.Length > 30 ||
+                !System.Text.RegularExpressions.Regex.IsMatch(handle, "^[a-z0-9._]+$"))
+            { callback?.Invoke(false); yield break; }
+            string root = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents";
+            string prefix = $"projects/{firebaseProjectId}/databases/(default)/documents/";
+            string key = "insta_" + handle;
+            var doc = new FirestoreDocument { fields = new FirestoreFields {
+                name = new FirestoreStringField(name), insta = new FirestoreStringField(handle),
+                bio = new FirestoreStringField(bio), gender = new FirestoreStringField(gender),
+                isPicked = new FirestoreBoolField(false), attempts = new FirestoreIntField(0)
+            }};
+            for (int attempt = 0; attempt < 5; attempt++)
             {
-                Debug.LogError("[Firebase] Project ID가 설정되지 않았습니다.");
-                callback?.Invoke(false);
-                yield break;
-            }
-
-            string url = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/Participants";
-
-            // Firestore 문서 규격 빌드
-            FirestoreDocument doc = new FirestoreDocument();
-            doc.fields = new FirestoreFields();
-            doc.fields.name = new FirestoreStringField(name);
-            doc.fields.insta = new FirestoreStringField(insta);
-            doc.fields.bio = new FirestoreStringField(bio);
-            doc.fields.gender = new FirestoreStringField(gender);
-            doc.fields.isPicked = new FirestoreBoolField(false); // 초기 상태는 뽑히지 않음
-            doc.fields.attempts = new FirestoreIntField(attempts);
-
-            string jsonPayload = JsonUtility.ToJson(doc);
-            
-            BeginWriteOperation();
-            using (UnityWebRequest request = new UnityWebRequest(url, "POST"))
-            {
-                byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonPayload);
-                request.uploadHandler = new UploadHandlerRaw(bodyRaw);
-                request.downloadHandler = new DownloadHandlerBuffer();
-                request.SetRequestHeader("Content-Type", "application/json");
-
-                yield return request.SendWebRequest();
-                EndWriteOperation();
-
-                if (request.result == UnityWebRequest.Result.Success)
+                using (var check = UnityWebRequest.Get(root + "/ParticipantKeys/" + key))
                 {
-                    Debug.Log($"[Firebase] 참가자 등록 성공: {name}");
-                    callback?.Invoke(true);
+                    yield return SendAuthorized(check);
+                    if (check.responseCode == 200) { callback?.Invoke(true); yield break; }
+                    if (check.responseCode != 404) { callback?.Invoke(false); yield break; }
                 }
-                else
+                string payload = "{\"writes\":[{\"update\":{\"name\":\"" + prefix + "ParticipantKeys/" + key +
+                    "\",\"fields\":{\"participantKey\":{\"stringValue\":\"" + key +
+                    "\"}}},\"currentDocument\":{\"exists\":false}},{\"update\":{\"name\":\"" +
+                    prefix + "Participants/" + key + "\"," + JsonUtility.ToJson(doc).Substring(1) +
+                    ",\"currentDocument\":{\"exists\":false}},{\"transform\":{\"document\":\"" +
+                    prefix + "GameState/stats\",\"fieldTransforms\":[{\"fieldPath\":\"totalRegistrations\"," +
+                    "\"increment\":{\"integerValue\":\"1\"}}]},\"currentDocument\":{\"exists\":true}}]}";
+                BeginWriteOperation();
+                using (var commit = new UnityWebRequest(root + ":commit", "POST"))
                 {
-                    Debug.LogError($"[Firebase] 참가자 등록 실패: {request.error}\n응답: {request.downloadHandler.text}");
-                    callback?.Invoke(false);
+                    commit.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(payload));
+                    commit.downloadHandler = new DownloadHandlerBuffer();
+                    commit.SetRequestHeader("Content-Type", "application/json");
+                    yield return SendAuthorized(commit);
+                    EndWriteOperation();
+                    if (commit.responseCode == 200) { callback?.Invoke(true); yield break; }
+                    if (commit.responseCode != 0 && commit.responseCode != 409 && commit.responseCode != 412 && commit.responseCode != 503)
+                    { callback?.Invoke(false); yield break; }
                 }
             }
+            callback?.Invoke(false);
         }
 
         /// <summary>
         /// 특정 인스타 아이디가 이미 등록되어 있는지 확인합니다.
         /// </summary>
-        public IEnumerator CheckInstaIdExists(string instaId, Action<bool> callback)
+        public IEnumerator CheckInstaIdExists(string instaId, Action<bool?> callback)
         {
             if (string.IsNullOrEmpty(firebaseProjectId))
             {
-                callback?.Invoke(false);
+                callback?.Invoke(null);
                 yield break;
+            }
+
+            instaId = (instaId ?? "").Trim().TrimStart('@').ToLowerInvariant();
+            if (instaId.Length == 0 || instaId.Length > 30 ||
+                !System.Text.RegularExpressions.Regex.IsMatch(instaId, "^[a-z0-9._]+$"))
+            { callback?.Invoke(null); yield break; }
+            string indexUrl = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/ParticipantKeys/insta_{instaId}";
+            using (var indexed = UnityWebRequest.Get(indexUrl))
+            {
+                yield return SendAuthorized(indexed);
+                if (indexed.responseCode == 200) { callback?.Invoke(true); yield break; }
+                if (indexed.responseCode != 404) { callback?.Invoke(null); yield break; }
             }
 
             string url = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents:runQuery";
@@ -174,7 +204,8 @@ namespace ClawMachine.Mechanics
                             "\"op\": \"EQUAL\"," +
                             "\"value\": {\"stringValue\": \"" + instaId + "\"}" +
                         "}" +
-                    "}" +
+                    "}," +
+                    "\"limit\": 20" +
                 "}" +
             "}";
 
@@ -185,7 +216,7 @@ namespace ClawMachine.Mechanics
                 request.downloadHandler = new DownloadHandlerBuffer();
                 request.SetRequestHeader("Content-Type", "application/json");
 
-                yield return request.SendWebRequest();
+                yield return SendAuthorized(request);
 
                 if (request.result == UnityWebRequest.Result.Success)
                 {
@@ -209,9 +240,11 @@ namespace ClawMachine.Mechanics
                     catch (Exception ex)
                     {
                         Debug.LogError($"[Firebase] 중복 확인 파싱 실패: {ex.Message}");
+                        callback?.Invoke(null);
+                        yield break;
                     }
                 }
-                
+                else { callback?.Invoke(null); yield break; }
                 callback?.Invoke(false);
             }
         }
@@ -255,6 +288,7 @@ namespace ClawMachine.Mechanics
                             "]" +
                         "}" +
                     "}" +
+                    ",\"limit\":20" +
                 "}" +
             "}";
 
@@ -265,7 +299,7 @@ namespace ClawMachine.Mechanics
                 request.downloadHandler = new DownloadHandlerBuffer();
                 request.SetRequestHeader("Content-Type", "application/json");
 
-                yield return request.SendWebRequest();
+                yield return SendAuthorized(request);
 
                 if (request.result == UnityWebRequest.Result.Success)
                 {
@@ -350,77 +384,104 @@ namespace ClawMachine.Mechanics
         {
             if (string.IsNullOrEmpty(firebaseProjectId))
             {
-                Debug.LogWarning("[Firebase] Project ID가 설정되지 않아 로컬 데이터를 사용합니다.");
                 callback?.Invoke(-1, -1);
                 yield break;
             }
-
-            string url = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents:runQuery";
-
-            string queryPayload = "{" +
-                "\"structuredQuery\": {" +
-                    "\"from\": [{\"collectionId\": \"Participants\"}]," +
-                    "\"where\": {" +
-                        "\"fieldFilter\": {" +
-                            "\"field\": {\"fieldPath\": \"isPicked\"}," +
-                            "\"op\": \"EQUAL\"," +
-                            "\"value\": {\"booleanValue\": false}" +
-                        "}" +
-                    "}" +
-                "}" +
-            "}";
-
-            using (UnityWebRequest request = new UnityWebRequest(url, "POST"))
+            int[] counts = { -1, -1 };
+            string[] genders = { "남", "여" };
+            string url = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents:runAggregationQuery";
+            for (int i = 0; i < 2; i++)
             {
-                byte[] bodyRaw = Encoding.UTF8.GetBytes(queryPayload);
-                request.uploadHandler = new UploadHandlerRaw(bodyRaw);
-                request.downloadHandler = new DownloadHandlerBuffer();
-                request.SetRequestHeader("Content-Type", "application/json");
-
-                yield return request.SendWebRequest();
-
-                if (request.result == UnityWebRequest.Result.Success)
+                string body = "{\"structuredAggregationQuery\":{\"aggregations\":[{\"count\":{},\"alias\":\"count\"}]," +
+                    "\"structuredQuery\":{\"from\":[{\"collectionId\":\"Participants\"}],\"where\":{\"compositeFilter\":{" +
+                    "\"op\":\"AND\",\"filters\":[{\"fieldFilter\":{\"field\":{\"fieldPath\":\"gender\"}," +
+                    "\"op\":\"EQUAL\",\"value\":{\"stringValue\":\"" + genders[i] + "\"}}},{\"fieldFilter\":{" +
+                    "\"field\":{\"fieldPath\":\"isPicked\"},\"op\":\"EQUAL\",\"value\":{\"booleanValue\":false}}}]}}}}}";
+                using (var request = new UnityWebRequest(url, "POST"))
                 {
-                    string rawJson = request.downloadHandler.text;
-                    string wrappedJson = "{\"items\":" + rawJson + "}";
-                    
-                    int maleCount = 0;
-                    int femaleCount = 0;
-
+                    request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(body));
+                    request.downloadHandler = new DownloadHandlerBuffer();
+                    request.SetRequestHeader("Content-Type", "application/json");
+                    yield return SendAuthorized(request);
+                    if (request.responseCode != 200) continue;
                     try
                     {
-                        RunQueryResponseList responseList = JsonUtility.FromJson<RunQueryResponseList>(wrappedJson);
-                        if (responseList.items != null)
-                        {
-                            foreach (var item in responseList.items)
-                            {
-                                if (item.document != null && item.document.fields != null)
-                                {
-                                    string gender = item.document.fields.gender?.stringValue;
-                                    if (gender == "남") maleCount++;
-                                    else if (gender == "여") femaleCount++;
-                                }
-                            }
-                        }
-                        callback?.Invoke(maleCount, femaleCount);
+                        var data = JsonUtility.FromJson<AggregateItems>("{\"items\":" + request.downloadHandler.text + "}");
+                        if (data?.items == null || data.items.Length == 0 ||
+                            !int.TryParse(data.items[0]?.result?.aggregateFields?.count?.integerValue, out counts[i]))
+                            counts[i] = -1;
                     }
                     catch (Exception ex)
                     {
-                        Debug.LogError($"[Firebase] 카운트 파싱 예외 발생: {ex.Message}");
-                        callback?.Invoke(-1, -1);
+                        Debug.LogWarning("[Firebase] 참가자 수 집계 응답 파싱 실패: " + ex.Message);
+                        counts[i] = -1;
                     }
                 }
-                else
-                {
-                    Debug.LogError($"[Firebase] 카운트 쿼리 실패: {request.error}");
-                    callback?.Invoke(-1, -1);
-                }
             }
+            callback?.Invoke(counts[0], counts[1]);
         }
 
         /// <summary>
         /// 특정 참가자의 'isPicked' 상태를 변경(예: true로 업데이트하여 뽑힘 처리)합니다.
         /// </summary>
+        public IEnumerator ClaimProfile(string roundId, MatchedProfileResponse candidate, Action<bool> callback)
+        {
+            string handle = (candidate.insta ?? "").Trim().TrimStart('@').ToLowerInvariant();
+            if (string.IsNullOrEmpty(roundId) || string.IsNullOrEmpty(candidate.documentId) ||
+                !System.Text.RegularExpressions.Regex.IsMatch(handle, "^[a-z0-9._]{1,30}$") ||
+                !System.Text.RegularExpressions.Regex.IsMatch(candidate.documentId, "^[a-zA-Z0-9._@ -]{1,200}$"))
+            { callback?.Invoke(false); yield break; }
+            string root = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents";
+            string prefix = $"projects/{firebaseProjectId}/databases/(default)/documents/";
+            string receipt = "MatchResults/love_" + roundId;
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                using (var check = UnityWebRequest.Get(root + "/" + receipt))
+                {
+                    yield return SendAuthorized(check);
+                    if (check.responseCode == 200)
+                    {
+                        ClaimReceipt saved = null;
+                        try { saved = JsonUtility.FromJson<ClaimReceipt>(check.downloadHandler.text); } catch { }
+                        callback?.Invoke(saved?.fields?.targetKey?.stringValue == candidate.documentId);
+                        yield break;
+                    }
+                    if (check.responseCode != 404) { callback?.Invoke(false); yield break; }
+                }
+                FirestoreDocumentResponse person = null;
+                using (var get = UnityWebRequest.Get(root + "/Participants/" + Uri.EscapeDataString(candidate.documentId)))
+                {
+                    yield return SendAuthorized(get);
+                    if (get.responseCode == 200)
+                        try { person = JsonUtility.FromJson<FirestoreDocumentResponse>(get.downloadHandler.text); } catch { }
+                }
+                if (person?.fields == null || string.IsNullOrEmpty(person.updateTime) ||
+                    person.fields.isPicked?.booleanValue == true ||
+                    (person.fields.insta?.stringValue ?? "").Trim().TrimStart('@').ToLowerInvariant() != handle)
+                { callback?.Invoke(false); yield break; }
+                string body = "{\"writes\":[{\"update\":{\"name\":\"" + prefix + receipt +
+                    "\",\"fields\":{\"targetKey\":{\"stringValue\":\"" + candidate.documentId +
+                    "\"}}},\"currentDocument\":{\"exists\":false}},{\"update\":{\"name\":\"" +
+                    prefix + "ProfileClaims/insta_" + handle +
+                    "\",\"fields\":{\"targetKey\":{\"stringValue\":\"" + candidate.documentId +
+                    "\"}}},\"currentDocument\":{\"exists\":false}},{\"update\":{\"name\":\"" +
+                    prefix + "Participants/" + candidate.documentId +
+                    "\",\"fields\":{\"isPicked\":{\"booleanValue\":true}}},\"updateMask\":{\"fieldPaths\":[\"isPicked\"]}," +
+                    "\"currentDocument\":{\"updateTime\":\"" + person.updateTime + "\"}}]}";
+                using (var commit = new UnityWebRequest(root + ":commit", "POST"))
+                {
+                    commit.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(body));
+                    commit.downloadHandler = new DownloadHandlerBuffer();
+                    commit.SetRequestHeader("Content-Type", "application/json");
+                    yield return SendAuthorized(commit);
+                    if (commit.responseCode == 200) { callback?.Invoke(true); yield break; }
+                    if (commit.responseCode != 409 && commit.responseCode != 412 && commit.responseCode != 503 && commit.responseCode != 0)
+                    { callback?.Invoke(false); yield break; }
+                }
+            }
+            callback?.Invoke(false);
+        }
+
         public IEnumerator UpdatePickedStatus(string documentId, bool isPicked, Action<bool> callback)
         {
             if (string.IsNullOrEmpty(firebaseProjectId) || string.IsNullOrEmpty(documentId))
@@ -448,7 +509,7 @@ namespace ClawMachine.Mechanics
                 request.downloadHandler = new DownloadHandlerBuffer();
                 request.SetRequestHeader("Content-Type", "application/json");
 
-                yield return request.SendWebRequest();
+                yield return SendAuthorized(request);
                 EndWriteOperation();
 
                 if (request.result == UnityWebRequest.Result.Success)
@@ -483,7 +544,7 @@ namespace ClawMachine.Mechanics
             {
                 using (UnityWebRequest request = UnityWebRequest.Get(currentUrl))
                 {
-                    yield return request.SendWebRequest();
+                    yield return SendAuthorized(request);
 
                     if (request.result != UnityWebRequest.Result.Success)
                     {
@@ -580,7 +641,7 @@ namespace ClawMachine.Mechanics
                 request.downloadHandler = new DownloadHandlerBuffer();
                 request.SetRequestHeader("Content-Type", "application/json");
 
-                yield return request.SendWebRequest();
+                yield return SendAuthorized(request);
                 EndWriteOperation();
 
                 if (request.result == UnityWebRequest.Result.Success)
@@ -612,7 +673,7 @@ namespace ClawMachine.Mechanics
             BeginWriteOperation();
             using (UnityWebRequest request = new UnityWebRequest(url, "DELETE"))
             {
-                yield return request.SendWebRequest();
+                yield return SendAuthorized(request);
                 EndWriteOperation();
 
                 if (request.result == UnityWebRequest.Result.Success)
@@ -639,19 +700,19 @@ namespace ClawMachine.Mechanics
         {
             if (string.IsNullOrEmpty(firebaseProjectId))
             {
-                callback?.Invoke(100); // 로컬 기본값
+                callback?.Invoke(-1);
                 yield break;
             }
 
             string getUrl = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/GameState/stats";
             using (UnityWebRequest request = UnityWebRequest.Get(getUrl))
             {
-                yield return request.SendWebRequest();
+                yield return SendAuthorized(request);
 
                 if (request.result != UnityWebRequest.Result.Success)
                 {
                     Debug.LogWarning($"[Firebase] GameState/stats 조회 실패 (초기값이 없을 수 있음): {request.error}");
-                    callback?.Invoke(100);
+                    callback?.Invoke(-1);
                     yield break;
                 }
 
@@ -673,14 +734,121 @@ namespace ClawMachine.Mechanics
                     Debug.LogError($"[Firebase] totalDolls 파싱 에러: {ex.Message}");
                 }
                 
-                callback?.Invoke(100);
+                callback?.Invoke(-1);
             }
         }
 
         /// <summary>
         /// GameState/stats 문서의 totalDolls 필드를 갱신합니다.
         /// </summary>
+        public IEnumerator ClaimPrize(string roundId, bool legendary, Action<bool> callback)
+        {
+            string field = legendary ? "totalLegendaryDolls" : "totalDolls";
+            string root = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents";
+            string receipt = "InventoryChanges/love_" + roundId;
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                using (var check = UnityWebRequest.Get(root + "/" + receipt))
+                {
+                    yield return SendAuthorized(check);
+                    if (check.responseCode == 200)
+                    {
+                        ClaimReceipt saved = null;
+                        try { saved = JsonUtility.FromJson<ClaimReceipt>(check.downloadHandler.text); } catch { }
+                        callback?.Invoke(saved?.fields?.stockField?.stringValue == field);
+                        yield break;
+                    }
+                    if (check.responseCode != 404) { callback?.Invoke(false); yield break; }
+                }
+                GameStateDocument stats = null;
+                using (var get = UnityWebRequest.Get(root + "/GameState/stats"))
+                {
+                    yield return SendAuthorized(get);
+                    if (get.responseCode == 200)
+                        try { stats = JsonUtility.FromJson<GameStateDocument>(get.downloadHandler.text); } catch { }
+                }
+                int count, successes;
+                if (stats?.fields == null || string.IsNullOrEmpty(stats.updateTime) ||
+                    !int.TryParse((legendary ? stats.fields.totalLegendaryDolls : stats.fields.totalDolls)?.integerValue, out count) || count <= 0 ||
+                    !int.TryParse(stats.fields.totalSuccesses?.integerValue, out successes) || successes == int.MaxValue)
+                { callback?.Invoke(false); yield break; }
+                string path = $"projects/{firebaseProjectId}/databases/(default)/documents/";
+                string body = "{\"writes\":[{\"update\":{\"name\":\"" + path + receipt +
+                    "\",\"fields\":{\"stockField\":{\"stringValue\":\"" + field +
+                    "\"}}},\"currentDocument\":{\"exists\":false}},{\"update\":{\"name\":\"" + path +
+                    "GameState/stats\",\"fields\":{\"" + field + "\":{\"integerValue\":\"" + (count - 1) +
+                    "\"},\"totalSuccesses\":{\"integerValue\":\"" + (successes + 1) +
+                    "\"}}},\"updateMask\":{\"fieldPaths\":[\"" + field +
+                    "\",\"totalSuccesses\"]},\"currentDocument\":{\"updateTime\":\"" + stats.updateTime + "\"}}]}";
+                using (var commit = new UnityWebRequest(root + ":commit", "POST"))
+                {
+                    commit.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(body));
+                    commit.downloadHandler = new DownloadHandlerBuffer();
+                    commit.SetRequestHeader("Content-Type", "application/json");
+                    yield return SendAuthorized(commit);
+                    if (commit.responseCode == 200) { callback?.Invoke(true); yield break; }
+                    if (commit.responseCode != 409 && commit.responseCode != 412 && commit.responseCode != 503 && commit.responseCode != 0)
+                    { callback?.Invoke(false); yield break; }
+                }
+            }
+            callback?.Invoke(false);
+        }
+
         public IEnumerator UpdateTotalDolls(int count, Action<bool> callback)
+        {
+            yield return SetInventory("totalDolls", count, callback);
+        }
+
+        public IEnumerator UpdateTotalLegendaryDolls(int count, Action<bool> callback)
+        {
+            yield return SetInventory("totalLegendaryDolls", count, callback);
+        }
+
+        private IEnumerator SetInventory(string field, int count, Action<bool> callback)
+        {
+            if (count < 0 || BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAdmin)
+            { callback?.Invoke(false); yield break; }
+            string root = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents";
+            string prefix = $"projects/{firebaseProjectId}/databases/(default)/documents/";
+            string id = Guid.NewGuid().ToString("N");
+            string receipt = "InventoryChanges/love_admin_" + id;
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                using (var check = UnityWebRequest.Get(root + "/" + receipt))
+                {
+                    yield return SendAuthorized(check);
+                    if (check.responseCode == 200) { callback?.Invoke(true); yield break; }
+                    if (check.responseCode != 404) { callback?.Invoke(false); yield break; }
+                }
+                GameStateDocument stats = null;
+                using (var get = UnityWebRequest.Get(root + "/GameState/stats"))
+                {
+                    yield return SendAuthorized(get);
+                    if (get.responseCode == 200)
+                        try { stats = JsonUtility.FromJson<GameStateDocument>(get.downloadHandler.text); } catch { }
+                }
+                if (string.IsNullOrEmpty(stats?.updateTime)) { callback?.Invoke(false); yield break; }
+                string body = "{\"writes\":[{\"update\":{\"name\":\"" + prefix + receipt +
+                    "\",\"fields\":{\"stockField\":{\"stringValue\":\"" + field +
+                    "\"}}},\"currentDocument\":{\"exists\":false}},{\"update\":{\"name\":\"" + prefix +
+                    "GameState/stats\",\"fields\":{\"" + field + "\":{\"integerValue\":\"" + count +
+                    "\"}}},\"updateMask\":{\"fieldPaths\":[\"" + field +
+                    "\"]},\"currentDocument\":{\"updateTime\":\"" + stats.updateTime + "\"}}]}";
+                using (var commit = new UnityWebRequest(root + ":commit", "POST"))
+                {
+                    commit.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(body));
+                    commit.downloadHandler = new DownloadHandlerBuffer();
+                    commit.SetRequestHeader("Content-Type", "application/json");
+                    yield return SendAuthorized(commit);
+                    if (commit.responseCode == 200) { callback?.Invoke(true); yield break; }
+                    if (commit.responseCode != 0 && commit.responseCode != 503)
+                    { callback?.Invoke(false); yield break; }
+                }
+            }
+            callback?.Invoke(false);
+        }
+
+        private IEnumerator UnsafeUpdateTotalDollsLegacy(int count, Action<bool> callback)
         {
             if (string.IsNullOrEmpty(firebaseProjectId))
             {
@@ -700,7 +868,7 @@ namespace ClawMachine.Mechanics
                 request.downloadHandler = new DownloadHandlerBuffer();
                 request.SetRequestHeader("Content-Type", "application/json");
 
-                yield return request.SendWebRequest();
+                yield return SendAuthorized(request);
                 EndWriteOperation();
 
                 if (request.result == UnityWebRequest.Result.Success)
@@ -721,21 +889,20 @@ namespace ClawMachine.Mechanics
         /// </summary>
         public IEnumerator GetTotalLegendaryDolls(Action<int> callback)
         {
-            const int defaultCount = 10;
             if (string.IsNullOrEmpty(firebaseProjectId))
             {
-                callback?.Invoke(PlayerPrefs.GetInt("Stats_TotalLegendaryDolls", defaultCount));
+                callback?.Invoke(-1);
                 yield break;
             }
 
             string getUrl = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/GameState/stats";
             using (UnityWebRequest request = UnityWebRequest.Get(getUrl))
             {
-                yield return request.SendWebRequest();
+                yield return SendAuthorized(request);
                 if (request.result != UnityWebRequest.Result.Success)
                 {
                     Debug.LogWarning($"[Firebase] 레전더리 인형 재고 조회 실패: {request.error}");
-                    callback?.Invoke(PlayerPrefs.GetInt("Stats_TotalLegendaryDolls", defaultCount));
+                    callback?.Invoke(-1);
                     yield break;
                 }
 
@@ -756,22 +923,19 @@ namespace ClawMachine.Mechanics
                     Debug.LogError($"[Firebase] totalLegendaryDolls 파싱 에러: {ex.Message}");
                 }
 
-                callback?.Invoke(PlayerPrefs.GetInt("Stats_TotalLegendaryDolls", defaultCount));
+                callback?.Invoke(-1);
             }
         }
 
         /// <summary>
         /// GameState/stats 문서의 레전더리 인형 재고를 별도 필드로 저장합니다.
         /// </summary>
-        public IEnumerator UpdateTotalLegendaryDolls(int count, Action<bool> callback)
+        private IEnumerator UnsafeUpdateTotalLegendaryDollsLegacy(int count, Action<bool> callback)
         {
             count = Mathf.Max(0, count);
-            PlayerPrefs.SetInt("Stats_TotalLegendaryDolls", count);
-            PlayerPrefs.Save();
-
             if (string.IsNullOrEmpty(firebaseProjectId))
             {
-                callback?.Invoke(true);
+                callback?.Invoke(false);
                 yield break;
             }
 
@@ -783,7 +947,7 @@ namespace ClawMachine.Mechanics
                 request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(jsonPayload));
                 request.downloadHandler = new DownloadHandlerBuffer();
                 request.SetRequestHeader("Content-Type", "application/json");
-                yield return request.SendWebRequest();
+                yield return SendAuthorized(request);
                 EndWriteOperation();
 
                 bool success = request.result == UnityWebRequest.Result.Success;
@@ -804,22 +968,16 @@ namespace ClawMachine.Mechanics
         {
             GameStatsData defaultStats = new GameStatsData
             {
-                totalDolls = 100,
-                totalLegendaryDolls = 10,
-                totalRevenue = 0,
-                totalRegistrations = 0,
-                totalPlays = 0,
-                totalSuccesses = 0
+                totalDolls = -1,
+                totalLegendaryDolls = -1,
+                totalRevenue = -1,
+                totalRegistrations = -1,
+                totalPlays = -1,
+                totalSuccesses = -1
             };
 
             if (string.IsNullOrEmpty(firebaseProjectId))
             {
-                defaultStats.totalDolls = PlayerPrefs.GetInt("Stats_TotalDolls", 100);
-                defaultStats.totalLegendaryDolls = PlayerPrefs.GetInt("Stats_TotalLegendaryDolls", 10);
-                defaultStats.totalRevenue = PlayerPrefs.GetInt("Stats_TotalRevenue", 0);
-                defaultStats.totalRegistrations = PlayerPrefs.GetInt("Stats_TotalRegistrations", 0);
-                defaultStats.totalPlays = PlayerPrefs.GetInt("Stats_TotalPlays", 0);
-                defaultStats.totalSuccesses = PlayerPrefs.GetInt("Stats_TotalSuccesses", 0);
                 callback?.Invoke(defaultStats);
                 yield break;
             }
@@ -827,17 +985,11 @@ namespace ClawMachine.Mechanics
             string getUrl = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/GameState/stats";
             using (UnityWebRequest request = UnityWebRequest.Get(getUrl))
             {
-                yield return request.SendWebRequest();
+                yield return SendAuthorized(request);
 
                 if (request.result != UnityWebRequest.Result.Success)
                 {
                     Debug.LogWarning($"[Firebase] GameState/stats 조회 실패 (초기값이 없을 수 있음): {request.error}");
-                    defaultStats.totalDolls = PlayerPrefs.GetInt("Stats_TotalDolls", 100);
-                    defaultStats.totalLegendaryDolls = PlayerPrefs.GetInt("Stats_TotalLegendaryDolls", 10);
-                    defaultStats.totalRevenue = PlayerPrefs.GetInt("Stats_TotalRevenue", 0);
-                    defaultStats.totalRegistrations = PlayerPrefs.GetInt("Stats_TotalRegistrations", 0);
-                    defaultStats.totalPlays = PlayerPrefs.GetInt("Stats_TotalPlays", 0);
-                    defaultStats.totalSuccesses = PlayerPrefs.GetInt("Stats_TotalSuccesses", 0);
                     callback?.Invoke(defaultStats);
                     yield break;
                 }
@@ -850,12 +1002,12 @@ namespace ClawMachine.Mechanics
                     {
                         GameStatsData stats = new GameStatsData();
                         
-                        stats.totalDolls = (doc.fields.totalDolls != null && int.TryParse(doc.fields.totalDolls.integerValue, out int td)) ? td : PlayerPrefs.GetInt("Stats_TotalDolls", 100);
-                        stats.totalLegendaryDolls = (doc.fields.totalLegendaryDolls != null && int.TryParse(doc.fields.totalLegendaryDolls.integerValue, out int tld)) ? tld : PlayerPrefs.GetInt("Stats_TotalLegendaryDolls", 10);
-                        stats.totalRevenue = (doc.fields.totalRevenue != null && int.TryParse(doc.fields.totalRevenue.integerValue, out int tr)) ? tr : PlayerPrefs.GetInt("Stats_TotalRevenue", 0);
-                        stats.totalRegistrations = (doc.fields.totalRegistrations != null && int.TryParse(doc.fields.totalRegistrations.integerValue, out int treg)) ? treg : PlayerPrefs.GetInt("Stats_TotalRegistrations", 0);
-                        stats.totalPlays = (doc.fields.totalPlays != null && int.TryParse(doc.fields.totalPlays.integerValue, out int tp)) ? tp : PlayerPrefs.GetInt("Stats_TotalPlays", 0);
-                        stats.totalSuccesses = (doc.fields.totalSuccesses != null && int.TryParse(doc.fields.totalSuccesses.integerValue, out int ts)) ? ts : PlayerPrefs.GetInt("Stats_TotalSuccesses", 0);
+                        stats.totalDolls = (doc.fields.totalDolls != null && int.TryParse(doc.fields.totalDolls.integerValue, out int td)) ? td : -1;
+                        stats.totalLegendaryDolls = (doc.fields.totalLegendaryDolls != null && int.TryParse(doc.fields.totalLegendaryDolls.integerValue, out int tld)) ? tld : -1;
+                        stats.totalRevenue = (doc.fields.totalRevenue != null && int.TryParse(doc.fields.totalRevenue.integerValue, out int tr)) ? tr : -1;
+                        stats.totalRegistrations = (doc.fields.totalRegistrations != null && int.TryParse(doc.fields.totalRegistrations.integerValue, out int treg)) ? treg : -1;
+                        stats.totalPlays = (doc.fields.totalPlays != null && int.TryParse(doc.fields.totalPlays.integerValue, out int tp)) ? tp : -1;
+                        stats.totalSuccesses = (doc.fields.totalSuccesses != null && int.TryParse(doc.fields.totalSuccesses.integerValue, out int ts)) ? ts : -1;
 
                         PlayerPrefs.SetInt("Stats_TotalDolls", stats.totalDolls);
                         PlayerPrefs.SetInt("Stats_TotalLegendaryDolls", stats.totalLegendaryDolls);
@@ -883,28 +1035,30 @@ namespace ClawMachine.Mechanics
         /// </summary>
         public IEnumerator UpdateGameStats(GameStatsData stats, List<string> fieldsToUpdate, Action<bool> callback)
         {
-            if (fieldsToUpdate == null || fieldsToUpdate.Count == 0)
+            if (fieldsToUpdate == null || fieldsToUpdate.Count == 0 ||
+                stats.totalDolls < 0 || stats.totalLegendaryDolls < 0 || stats.totalRevenue < 0 ||
+                stats.totalRegistrations < 0 || stats.totalPlays < 0 || stats.totalSuccesses < 0 ||
+                BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAdmin)
             {
                 callback?.Invoke(false);
                 yield break;
             }
 
-            foreach (var f in fieldsToUpdate)
-            {
-                if (f == "totalDolls") PlayerPrefs.SetInt("Stats_TotalDolls", stats.totalDolls);
-                else if (f == "totalLegendaryDolls") PlayerPrefs.SetInt("Stats_TotalLegendaryDolls", stats.totalLegendaryDolls);
-                else if (f == "totalRevenue") PlayerPrefs.SetInt("Stats_TotalRevenue", stats.totalRevenue);
-                else if (f == "totalRegistrations") PlayerPrefs.SetInt("Stats_TotalRegistrations", stats.totalRegistrations);
-                else if (f == "totalPlays") PlayerPrefs.SetInt("Stats_TotalPlays", stats.totalPlays);
-                else if (f == "totalSuccesses") PlayerPrefs.SetInt("Stats_TotalSuccesses", stats.totalSuccesses);
-            }
-            PlayerPrefs.Save();
-
             if (string.IsNullOrEmpty(firebaseProjectId))
             {
-                callback?.Invoke(true);
+                callback?.Invoke(false);
                 yield break;
             }
+
+            GameStateDocument current = null;
+            string statsUrl = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/GameState/stats";
+            using (var get = UnityWebRequest.Get(statsUrl))
+            {
+                yield return SendAuthorized(get);
+                if (get.responseCode == 200)
+                    try { current = JsonUtility.FromJson<GameStateDocument>(get.downloadHandler.text); } catch { }
+            }
+            if (string.IsNullOrEmpty(current?.updateTime)) { callback?.Invoke(false); yield break; }
 
             StringBuilder maskBuilder = new StringBuilder();
             StringBuilder fieldsBuilder = new StringBuilder();
@@ -935,7 +1089,7 @@ namespace ClawMachine.Mechanics
             }
             fieldsBuilder.Append("}");
 
-            string url = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/GameState/stats?{maskBuilder.ToString()}";
+            string url = statsUrl + "?" + maskBuilder + "&currentDocument.updateTime=" + Uri.EscapeDataString(current.updateTime);
             string jsonPayload = $"{{\"fields\":{fieldsBuilder.ToString()}}}";
 
             BeginWriteOperation();
@@ -946,7 +1100,7 @@ namespace ClawMachine.Mechanics
                 request.downloadHandler = new DownloadHandlerBuffer();
                 request.SetRequestHeader("Content-Type", "application/json");
 
-                yield return request.SendWebRequest();
+                yield return SendAuthorized(request);
                 EndWriteOperation();
 
                 if (request.result == UnityWebRequest.Result.Success)
@@ -967,9 +1121,9 @@ namespace ClawMachine.Mechanics
             StartCoroutine(IncrementStatCoroutine("totalRegistrations", 1));
         }
 
-        public void IncrementPlayCountAndRevenue(int revenue)
+        public void IncrementPlayCountAndRevenue(int revenue, Action<bool, string> callback = null)
         {
-            StartCoroutine(IncrementPlayAndRevenueCoroutine(revenue));
+            StartCoroutine(IncrementPlayAndRevenueCoroutine(revenue, callback));
         }
 
         public void IncrementSuccessCount()
@@ -979,38 +1133,46 @@ namespace ClawMachine.Mechanics
 
         private IEnumerator IncrementStatCoroutine(string fieldName, int amount)
         {
-            GameStatsData currentStats = new GameStatsData();
-            bool fetchDone = false;
-            yield return GetGameStats((stats) => {
-                currentStats = stats;
-                fetchDone = true;
-            });
-            yield return new WaitUntil(() => fetchDone);
-
-            if (fieldName == "totalRegistrations") currentStats.totalRegistrations += amount;
-            else if (fieldName == "totalPlays") currentStats.totalPlays += amount;
-            else if (fieldName == "totalSuccesses") currentStats.totalSuccesses += amount;
-            else if (fieldName == "totalRevenue") currentStats.totalRevenue += amount;
-            else if (fieldName == "totalDolls") currentStats.totalDolls += amount;
-            else if (fieldName == "totalLegendaryDolls") currentStats.totalLegendaryDolls += amount;
-
-            yield return UpdateGameStats(currentStats, new List<string> { fieldName }, null);
+            if (fieldName != "totalSuccesses" && fieldName != "totalRegistrations") yield break;
+            yield return IncrementAtomic(null, $"{{\"fieldPath\":\"{fieldName}\",\"increment\":{{\"integerValue\":\"{amount}\"}}}}", null);
         }
 
-        private IEnumerator IncrementPlayAndRevenueCoroutine(int revenue)
+        private IEnumerator IncrementPlayAndRevenueCoroutine(int revenue, Action<bool, string> callback)
         {
-            GameStatsData currentStats = new GameStatsData();
-            bool fetchDone = false;
-            yield return GetGameStats((stats) => {
-                currentStats = stats;
-                fetchDone = true;
-            });
-            yield return new WaitUntil(() => fetchDone);
+            string transforms = "{\"fieldPath\":\"totalPlays\",\"increment\":{\"integerValue\":\"1\"}}," +
+                "{\"fieldPath\":\"totalRevenue\",\"increment\":{\"integerValue\":\"" + revenue + "\"}}";
+            yield return IncrementAtomic("love_" + Guid.NewGuid().ToString("N"), transforms, callback);
+        }
 
-            currentStats.totalPlays += 1;
-            currentStats.totalRevenue += revenue;
-
-            yield return UpdateGameStats(currentStats, new List<string> { "totalPlays", "totalRevenue" }, null);
+        private IEnumerator IncrementAtomic(string roundId, string transforms, Action<bool, string> callback)
+        {
+            if (string.IsNullOrEmpty(firebaseProjectId))
+            { callback?.Invoke(false, "Firebase 설정을 확인해 주세요."); yield break; }
+            string root = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents";
+            string prefix = $"projects/{firebaseProjectId}/databases/(default)/documents/";
+            string receipt = roundId == null ? "" : "{\"update\":{\"name\":\"" + prefix + "GameRounds/" + roundId +
+                "\",\"fields\":{\"kind\":{\"stringValue\":\"love\"}}},\"currentDocument\":{\"exists\":false}},";
+            string payload = "{\"writes\":[" + receipt + "{\"transform\":{\"document\":\"" + prefix +
+                "GameState/stats\",\"fieldTransforms\":[" + transforms + "]},\"currentDocument\":{\"exists\":true}}]}";
+            using (var request = new UnityWebRequest(root + ":commit", "POST"))
+            {
+                request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(payload));
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.SetRequestHeader("Content-Type", "application/json");
+                yield return SendAuthorized(request);
+                if (request.responseCode == 200) { callback?.Invoke(true, null); yield break; }
+                if (roundId != null)
+                {
+                    using (var check = UnityWebRequest.Get(root + "/GameRounds/" + roundId))
+                    {
+                        yield return SendAuthorized(check);
+                        if (check.responseCode == 200) { callback?.Invoke(true, null); yield break; }
+                    }
+                }
+                if (request.responseCode != 200)
+                    Debug.LogError("[Firebase] 통계 저장 확인 필요: " + request.responseCode + " / " + roundId);
+                callback?.Invoke(false, "회차 기록 확인 필요: " + roundId);
+            }
         }
     }
 
@@ -1038,6 +1200,7 @@ namespace ClawMachine.Mechanics
     [Serializable]
     public class GameStateDocument
     {
+        public string updateTime;
         public GameStateFields fields;
     }
 
@@ -1068,6 +1231,7 @@ namespace ClawMachine.Mechanics
     public class FirestoreStringField
     {
         public string stringValue;
+        public FirestoreStringField() { }
         public FirestoreStringField(string val) => stringValue = val;
     }
 
@@ -1075,6 +1239,7 @@ namespace ClawMachine.Mechanics
     public class FirestoreBoolField
     {
         public bool booleanValue;
+        public FirestoreBoolField() { }
         public FirestoreBoolField(bool val) => booleanValue = val;
     }
 
@@ -1082,6 +1247,7 @@ namespace ClawMachine.Mechanics
     public class FirestoreIntField
     {
         public string integerValue; // Firestore API 상에서 int형도 string 형태 전송
+        public FirestoreIntField() { }
         public FirestoreIntField(int val) => integerValue = val.ToString();
     }
 
@@ -1105,6 +1271,7 @@ namespace ClawMachine.Mechanics
     public class FirestoreDocumentResponse
     {
         public string name; // projects/{projectId}/databases/(default)/documents/Participants/{documentId}
+        public string updateTime;
         public FirestoreFields fields;
     }
 

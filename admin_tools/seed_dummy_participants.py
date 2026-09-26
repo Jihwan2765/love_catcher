@@ -10,6 +10,7 @@ import sys
 import json
 import urllib.request
 import urllib.error
+from _auth import authorization_header
 
 # Windows 콘솔 UTF-8 출력 보장
 try:
@@ -55,6 +56,7 @@ DUMMY_USERS = [
 def make_request(url, method="GET", data=None):
     req = urllib.request.Request(url, method=method)
     req.add_header("Content-Type", "application/json")
+    req.add_header("Authorization", authorization_header(PROJECT_ID))
     body = json.dumps(data).encode("utf-8") if data else None
     try:
         with urllib.request.urlopen(req, data=body, timeout=10) as response:
@@ -115,10 +117,6 @@ def seed_users():
     print(f"\n[+] 주입 완료! (성공: {success_count}/{len(DUMMY_USERS)})")
 
 if __name__ == "__main__":
-    if PROJECT_ID == "your-firebase-project-id":
-        print("="*60)
-        print("주의: Firebase Project ID가 기본값('your-firebase-project-id')입니다.")
-        print("사용법: python seed_dummy_participants.py <FIREBASE_PROJECT_ID>")
-        print("="*60)
-    init_game_stats()
-    seed_users()
+    print("이 예전 시드 도구는 ParticipantKeys와 원자적 등록 집계를 만들지 않습니다.")
+    print("운영 DB에서는 실행하지 마세요. 테스트 참가자는 게임의 등록 화면에서 추가하세요.")
+    sys.exit(2)

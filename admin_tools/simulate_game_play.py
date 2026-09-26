@@ -10,6 +10,7 @@ import sys
 import json
 import urllib.request
 import urllib.error
+from _auth import authorization_header
 
 try:
     sys.stdout.reconfigure(encoding='utf-8')
@@ -22,6 +23,7 @@ BASE_URL = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases
 def make_request(url, method="GET", data=None):
     req = urllib.request.Request(url, method=method)
     req.add_header("Content-Type", "application/json")
+    req.add_header("Authorization", authorization_header(PROJECT_ID))
     body = json.dumps(data, ensure_ascii=False).encode("utf-8") if data else None
     try:
         with urllib.request.urlopen(req, data=body, timeout=10) as response:
@@ -162,4 +164,7 @@ def test_full_loop():
     print("="*60)
 
 if __name__ == "__main__":
-    test_full_loop()
+    print("이 스크립트의 직접 DB 쓰기는 중복 방지 영수증과 원자적 저장을 거치지 않습니다.")
+    print("운영 DB에서는 실행하지 마세요. 다음 오프라인 회귀 테스트를 사용하세요:")
+    print("dotnet run --project Tests/Database/DatabaseRegression.csproj")
+    sys.exit(2)

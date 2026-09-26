@@ -78,6 +78,14 @@ namespace ClawMachine.UI
         private Button regCoinPack4;
         private Button btnCoinStart;
         private int currentCoins = 0;
+        private float lastPlayStartAt = -10f;
+
+        private bool BeginPlayTransition()
+        {
+            if (Time.unscaledTime - lastPlayStartAt < 0.75f) return false;
+            lastPlayStartAt = Time.unscaledTime;
+            return true;
+        }
         private int pendingCoinsToCharge = 0;
 
         private enum RetryPaymentOrigin
@@ -1020,11 +1028,11 @@ namespace ClawMachine.UI
                 return;
             }
 
-            if (string.IsNullOrEmpty(registeredName))
+            if (string.IsNullOrEmpty(registeredName) || string.IsNullOrWhiteSpace(registeredInsta))
             {
                 if (registerWarningText != null)
                 {
-                    registerWarningText.text = "이름은 필수 입력 항목입니다. 인스타 아이디는 선택 사항입니다.";
+                    registerWarningText.text = "이름과 인스타 아이디를 입력해 주세요.";
                     registerWarningText.style.display = DisplayStyle.Flex;
                 }
                 Debug.LogWarning("필수 입력 항목 누락.");
@@ -1038,8 +1046,13 @@ namespace ClawMachine.UI
                 if (registerSubmitBtn != null) registerSubmitBtn.SetEnabled(false);
                 
                 StartCoroutine(ClawMachine.Mechanics.FirebaseRESTService.Instance.CheckInstaIdExists(registeredInsta, (exists) => {
-                    isDuplicateRegistration = exists;
                     if (registerSubmitBtn != null) registerSubmitBtn.SetEnabled(true);
+                    if (!exists.HasValue)
+                    {
+                        ShowRegistrationError("참가자 중복 확인에 실패했습니다. 연결을 확인하고 다시 눌러 주세요.");
+                        return;
+                    }
+                    isDuplicateRegistration = exists.Value;
                     CheckCoinAndProceed();
                 }));
             }
@@ -1054,6 +1067,7 @@ namespace ClawMachine.UI
             int totalAvailable = currentCoins + pendingCoinsToCharge;
             if (totalAvailable > 0)
             {
+                if (!BeginPlayTransition()) return;
                 int revenue = GetRevenueFromStagedCoins(pendingCoinsToCharge);
                 currentCoins = totalAvailable - 1;
                 pendingCoinsToCharge = 0;
@@ -1309,6 +1323,7 @@ namespace ClawMachine.UI
         private void ToggleDevMode()
         {
             if (devModeOverlay == null) return;
+            if (BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAdmin) return;
             if (devSceneReloadConfirmOverlay?.style.display == DisplayStyle.Flex) return;
 
             if (devModeOverlay.style.display == DisplayStyle.Flex)
@@ -1971,6 +1986,7 @@ namespace ClawMachine.UI
         {
             if (currentCoins > 0)
             {
+                if (!BeginPlayTransition()) return;
                 currentCoins--;
                 PlayerPrefs.SetInt("LoveCatcher_Coins", currentCoins);
                 PlayerPrefs.Save();
@@ -2001,6 +2017,7 @@ namespace ClawMachine.UI
         {
             if (currentCoins > 0)
             {
+                if (!BeginPlayTransition()) return;
                 currentCoins--;
                 PlayerPrefs.SetInt("LoveCatcher_Coins", currentCoins);
                 PlayerPrefs.Save();
@@ -2026,6 +2043,7 @@ namespace ClawMachine.UI
         {
             if (currentCoins > 0)
             {
+                if (!BeginPlayTransition()) return;
                 currentCoins--;
                 PlayerPrefs.SetInt("LoveCatcher_Coins", currentCoins);
                 PlayerPrefs.Save();
@@ -2048,6 +2066,7 @@ namespace ClawMachine.UI
         {
             if (currentCoins > 0)
             {
+                if (!BeginPlayTransition()) return;
                 currentCoins--;
                 PlayerPrefs.SetInt("LoveCatcher_Coins", currentCoins);
                 PlayerPrefs.Save();
@@ -2118,6 +2137,7 @@ namespace ClawMachine.UI
             int totalAvailable = currentCoins + pendingCoinsToCharge;
             if (totalAvailable > 0)
             {
+                if (!BeginPlayTransition()) return;
                 int revenue = GetRevenueFromStagedCoins(pendingCoinsToCharge);
                 currentCoins = totalAvailable - 1;
                 pendingCoinsToCharge = 0;
@@ -2161,16 +2181,16 @@ namespace ClawMachine.UI
 
         public void SetStats(int instaCount, int dollCount, int legendaryDollCount, float winChance)
         {
-            if (instaCountText != null) instaCountText.text = $"{instaCount}개";
-            if (dollCountText != null) dollCountText.text = $"{dollCount}개";
-            if (legendaryDollCountText != null) legendaryDollCountText.text = $"{legendaryDollCount}개";
+            if (instaCountText != null) instaCountText.text = instaCount >= 0 ? $"{instaCount}개" : "확인 필요";
+            if (dollCountText != null) dollCountText.text = dollCount >= 0 ? $"{dollCount}개" : "확인 필요";
+            if (legendaryDollCountText != null) legendaryDollCountText.text = legendaryDollCount >= 0 ? $"{legendaryDollCount}개" : "확인 필요";
             if (winChanceText != null) winChanceText.text = $"{winChance:F1}%";
         }
 
         public void UpdateRegisterPoolCount(int maleCount, int femaleCount)
         {
-            if (registerMaleCountText != null) registerMaleCountText.text = $"남성 아이디: {maleCount}개";
-            if (registerFemaleCountText != null) registerFemaleCountText.text = $"여성 아이디: {femaleCount}개";
+            if (registerMaleCountText != null) registerMaleCountText.text = maleCount >= 0 ? $"남성 아이디: {maleCount}개" : "남성 아이디: 확인 필요";
+            if (registerFemaleCountText != null) registerFemaleCountText.text = femaleCount >= 0 ? $"여성 아이디: {femaleCount}개" : "여성 아이디: 확인 필요";
         }
 
         public void SetTimer(float seconds)
@@ -2445,6 +2465,7 @@ namespace ClawMachine.UI
 
         private void ShowOverlay(VisualElement overlay)
         {
+            if (overlay == devModeOverlay && (BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAdmin)) return;
             if (overlay != null)
             {
                 overlay.style.display = DisplayStyle.Flex;
@@ -2722,7 +2743,11 @@ namespace ClawMachine.UI
         {
             if (ClawMachine.Mechanics.FirebaseRESTService.Instance != null)
             {
-                ClawMachine.Mechanics.FirebaseRESTService.Instance.IncrementPlayCountAndRevenue(revenue);
+                ClawMachine.Mechanics.FirebaseRESTService.Instance.IncrementPlayCountAndRevenue(revenue,
+                    (success, error) =>
+                    {
+                        if (!success) ShowRegistrationError("플레이 DB 기록 확인 실패. 운영진이 결제·회차를 확인해 주세요. " + error);
+                    });
             }
         }
     }

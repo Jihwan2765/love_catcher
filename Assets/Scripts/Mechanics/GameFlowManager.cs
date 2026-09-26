@@ -80,6 +80,7 @@ namespace ClawMachine.Mechanics
         private float timeRemaining;
         private int sessionAttempts = 0;
         private bool isGameActive = false;
+        private bool sessionStarting;
         private bool isDollScoredThisAttempt = false;
         private List<GameObject> scoredDollsThisAttempt = new List<GameObject>();
 
@@ -220,6 +221,7 @@ namespace ClawMachine.Mechanics
         /// </summary>
         public void StartGameSession(string name, string insta, string bio, string gender, bool isDuplicateRegistration = false)
         {
+            if (sessionStarting || isGameActive) return;
             if (!IsSupportedGender(gender))
             {
                 const string message = "성별 정보가 올바르지 않아 게임을 시작할 수 없습니다. 남성 또는 여성을 다시 선택해주세요.";
@@ -230,6 +232,36 @@ namespace ClawMachine.Mechanics
                 }
                 return;
             }
+
+            if (firebaseService == null || string.IsNullOrWhiteSpace(insta))
+            {
+                ClawMachineUIManager.Instance.ShowRegistrationError("인스타 ID와 DB 연결을 확인해 주세요.");
+                return;
+            }
+            if (!isDuplicateRegistration)
+            {
+                sessionStarting = true;
+                StartCoroutine(RegisterThenStart(name, insta, bio, gender));
+                return;
+            }
+            ActivateGameSession();
+        }
+
+        private IEnumerator RegisterThenStart(string name, string insta, string bio, string gender)
+        {
+            bool registered = false;
+            yield return firebaseService.RegisterPlayer(name, insta, bio, gender, 0, ok => registered = ok);
+            sessionStarting = false;
+            if (!registered)
+            {
+                ClawMachineUIManager.Instance.ShowRegistrationError("참가자 등록 확인 실패. 운영진이 연결과 결제 기록을 확인해 주세요.");
+                yield break;
+            }
+            ActivateGameSession();
+        }
+
+        private void ActivateGameSession()
+        {
 
             sessionAttempts = 1; // 1회차부터 표시하도록 수정
             timeRemaining = sessionTimeLimit;
@@ -255,25 +287,9 @@ namespace ClawMachine.Mechanics
                 clawController.TriggerReset();
             }
 
-            // Firebase 실시간 등록 연동 (비동기)
-            if (firebaseService != null && !isDuplicateRegistration && !string.IsNullOrWhiteSpace(insta))
-            {
-                StartCoroutine(firebaseService.RegisterPlayer(name, insta, bio, gender, sessionAttempts, (success) => {
-                    if (success)
-                    {
-                        Debug.Log("[Firebase] 참가자 DB 실시간 백업 완료");
-                        firebaseService.IncrementRegistrationCount();
-                    }
-                }));
-            }
-            else if (isDuplicateRegistration)
-            {
-                Debug.Log("[Firebase] 중복 등록이므로 DB에 저장하지 않습니다.");
-            }
-            
             UpdateStatsUI();
 
-            Debug.Log($"[게임 세션 시작] 플레이어: {name} ({gender})");
+            Debug.Log("[게임 세션 시작] 참가자 확인 완료");
         }
 
         /// <summary>
@@ -365,10 +381,20 @@ namespace ClawMachine.Mechanics
             isGameActive = false;
             if (clawController != null) clawController.enabled = false;
 
-            // Increment successful extraction count
-            if (firebaseService != null)
+            // A result is only final after the shared database claim is confirmed.
+            string rewardRoundId = System.Guid.NewGuid().ToString("N");
+            if (firebaseService == null)
             {
-                firebaseService.IncrementSuccessCount();
+                ClawMachineUIManager.Instance.ShowRegistrationError("DB 연결을 확인해 주세요. 보상 지급을 보류합니다.");
+                yield break;
+            }
+            yield return firebaseService.GetTotalDolls(count => totalDolls = count);
+            yield return firebaseService.GetTotalLegendaryDolls(count => totalLegendaryDolls = count);
+            if (totalDolls < 0 || totalLegendaryDolls < 0 ||
+                (totalDolls == 0 && totalLegendaryDolls == 0))
+            {
+                ClawMachineUIManager.Instance.ShowRegistrationError("상품 재고가 없거나 확인되지 않았습니다. 운영을 중단하고 운영진에게 알려 주세요.");
+                yield break;
             }
 
             string currentGender = ClawMachineUIManager.Instance.registeredGender;
@@ -406,58 +432,51 @@ namespace ClawMachine.Mechanics
             // 인스타 보상이 실제 당첨된 경우에만 Firebase에서 지급 가능한 상대를 조회합니다.
             if (reward == RewardType.Instagram)
             {
-                bool isQueryFinished = false;
                 string oppositeGender = currentGender == "남" ? "여" : "남";
-
-                if (firebaseService != null)
+                if (firebaseService == null)
                 {
-                    StartCoroutine(firebaseService.GetRandomMatch(oppositeGender, result => {
-                        matchResult = result;
-                        isQueryFinished = true;
-                    }));
+                    ClawMachineUIManager.Instance.ShowRegistrationError("DB 연결을 확인해 주세요. 보상 지급을 보류합니다.");
+                    yield break;
                 }
-
-                float timeout = 3f;
-                while (!isQueryFinished && timeout > 0f)
-                {
-                    timeout -= Time.deltaTime;
-                    yield return null;
-                }
-
-                bool canGiveInstagram = isQueryFinished && matchResult.success &&
+                yield return firebaseService.GetRandomMatch(oppositeGender, result => matchResult = result);
+                bool canGiveInstagram = matchResult.success &&
                                         !string.IsNullOrWhiteSpace(matchResult.insta) &&
                                         !string.IsNullOrWhiteSpace(matchResult.documentId);
                 if (!canGiveInstagram)
                 {
-                    Debug.LogWarning("[보상 재추첨] 지급 가능한 이성 인스타가 없거나 Firebase 조회에 실패하여 인스타를 제외하고 재추첨합니다.");
-                    reward = RollReward(legendaryWeight, dollWeight, 0f, candyWeight);
+                    ClawMachineUIManager.Instance.ShowRegistrationError("매칭 대상 확인이 필요합니다. 보상을 보류하고 운영진에게 알려 주세요.");
+                    yield break;
                 }
                 else
                 {
-                    bool isLockFinished = false;
                     bool isLockSuccessful = false;
-                    StartCoroutine(firebaseService.UpdatePickedStatus(matchResult.documentId, true, updateSuccess => {
-                        isLockSuccessful = updateSuccess;
-                        isLockFinished = true;
-                    }));
-
-                    float lockTimeout = 3f;
-                    while (!isLockFinished && lockTimeout > 0f)
+                    yield return firebaseService.ClaimProfile(rewardRoundId, matchResult,
+                        updateSuccess => isLockSuccessful = updateSuccess);
+                    if (!isLockSuccessful)
                     {
-                        lockTimeout -= Time.deltaTime;
-                        yield return null;
-                    }
-
-                    if (!isLockFinished || !isLockSuccessful)
-                    {
-                        Debug.LogWarning("[보상 재추첨] 인스타 카드 잠금에 실패하여 중복 지급을 막기 위해 인스타를 제외하고 재추첨합니다.");
-                        reward = RollReward(legendaryWeight, dollWeight, 0f, candyWeight);
+                        ClawMachineUIManager.Instance.ShowRegistrationError("인스타 지급 확정이 불분명합니다. 운영진이 기록을 확인해 주세요. " + rewardRoundId);
+                        yield break;
                     }
                     else
                     {
                         Debug.Log($"[Firebase] {matchResult.name} 카드 실시간 잠금 완료");
                     }
                 }
+            }
+
+            if (reward == RewardType.Doll || reward == RewardType.Legendary)
+            {
+                bool claimed = false;
+                if (firebaseService != null)
+                    yield return firebaseService.ClaimPrize(rewardRoundId, reward == RewardType.Legendary,
+                        success => claimed = success);
+                if (!claimed)
+                {
+                    ClawMachineUIManager.Instance.ShowRegistrationError("재고 소진 또는 저장 확인 실패: 상품 지급 보류. 운영진에게 알려 주세요. " + rewardRoundId);
+                    yield break;
+                }
+                if (reward == RewardType.Doll) totalDolls = Mathf.Max(0, totalDolls - 1);
+                else totalLegendaryDolls = Mathf.Max(0, totalLegendaryDolls - 1);
             }
 
             ClawMachineUIManager.Instance.ShowRewardPopup(
@@ -467,38 +486,13 @@ namespace ClawMachine.Mechanics
                 matchResult.insta,
                 matchResult.bio);
 
-            if (reward == RewardType.Doll)
-            {
-                totalDolls = Mathf.Max(0, totalDolls - 1);
-                if (firebaseService != null && !string.IsNullOrEmpty(firebaseService.firebaseProjectId))
-                {
-                    StartCoroutine(firebaseService.UpdateTotalDolls(totalDolls, (success) => {
-                        UpdateStatsUI();
-                    }));
-                }
-                else
-                {
-                    UpdateStatsUI();
-                }
-            }
-
-            else if (reward == RewardType.Legendary)
-            {
-                totalLegendaryDolls = Mathf.Max(0, totalLegendaryDolls - 1);
-                if (firebaseService != null && !string.IsNullOrEmpty(firebaseService.firebaseProjectId))
-                {
-                    StartCoroutine(firebaseService.UpdateTotalLegendaryDolls(totalLegendaryDolls, success => UpdateStatsUI()));
-                }
-                else
-                {
-                    UpdateStatsUI();
-                }
-            }
-            else if (reward == RewardType.Instagram)
+            if (reward == RewardType.Instagram)
             {
                 totalInstaCards = Mathf.Max(0, totalInstaCards - 1);
-                UpdateStatsUI();
             }
+            if (firebaseService != null && reward != RewardType.Doll && reward != RewardType.Legendary)
+                firebaseService.IncrementSuccessCount();
+            UpdateStatsUI();
         }
 
         private RewardType RollReward(float legendary, float doll, float instagram, float candy)
@@ -668,25 +662,17 @@ namespace ClawMachine.Mechanics
                     }
                     else
                     {
-                        ClawMachineUIManager.Instance.UpdateRegisterPoolCount(maleProfiles.Count, femaleProfiles.Count);
-                        
-                        string currentGender = ClawMachineUIManager.Instance.registeredGender;
-                        if (string.IsNullOrEmpty(currentGender)) currentGender = "남";
-                        oppositeGenderCount = (currentGender == "남") ? femaleProfiles.Count : maleProfiles.Count;
-                        
-                        ClawMachineUIManager.Instance.SetStats(oppositeGenderCount, totalDolls, totalLegendaryDolls, winChance);
+                        oppositeGenderCount = -1;
+                        ClawMachineUIManager.Instance.UpdateRegisterPoolCount(-1, -1);
+                        ClawMachineUIManager.Instance.SetStats(-1, totalDolls, totalLegendaryDolls, 0f);
                     }
                 }));
             }
             else
             {
-                ClawMachineUIManager.Instance.UpdateRegisterPoolCount(maleProfiles.Count, femaleProfiles.Count);
-                
-                string currentGender = ClawMachineUIManager.Instance.registeredGender;
-                if (string.IsNullOrEmpty(currentGender)) currentGender = "남";
-                oppositeGenderCount = (currentGender == "남") ? femaleProfiles.Count : maleProfiles.Count;
-                
-                ClawMachineUIManager.Instance.SetStats(oppositeGenderCount, totalDolls, totalLegendaryDolls, winChance);
+                oppositeGenderCount = -1;
+                ClawMachineUIManager.Instance.UpdateRegisterPoolCount(-1, -1);
+                ClawMachineUIManager.Instance.SetStats(-1, totalDolls, totalLegendaryDolls, 0f);
             }
         }
 

@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function staff() {
+      return request.auth != null && request.auth.token.boothStaff == true;
+    }
+    function admin() {
+      return staff() && request.auth.token.boothAdmin == true;
+    }
+    match /Participants/{id} {
+      allow get, list, create, update: if staff();
+      allow delete: if admin();
+    }
+    match /ParticipantKeys/{id} {
+      allow get, list, create: if staff();
+      allow delete: if admin();
+    }
+    match /GameState/{id} {
+      allow get: if staff() && id == 'stats';
+      allow update: if staff() && id == 'stats';
+      allow create, delete: if admin() && id == 'stats';
+    }
+    match /GameRounds/{id} {
+      allow get, list, create: if staff();
+      allow delete: if admin();
+    }
+    match /MatchResults/{id} {
+      allow get, list, create: if staff();
+      allow delete: if admin();
+    }
+    match /ProfileClaims/{id} {
+      allow get, list, create: if staff();
+      allow delete: if admin();
+    }
+    match /InventoryChanges/{id} {
+      allow get, list, create: if staff();
+      allow delete: if admin();
+    }
+    match /RhythmLeaderboard/{id} {
+      allow get, list, create: if staff();
+      allow delete: if admin();
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

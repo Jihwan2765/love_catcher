@@ -10,6 +10,8 @@ import sys
 import json
 import urllib.request
 import urllib.error
+import urllib.parse
+from _auth import authorization_header
 
 # Windows 콘솔 UTF-8 출력 보장
 try:
@@ -27,10 +29,12 @@ BASE_URL = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases
 def make_request(url, method="GET", data=None):
     req = urllib.request.Request(url, method=method)
     req.add_header("Content-Type", "application/json")
+    req.add_header("Authorization", authorization_header(PROJECT_ID))
     body = json.dumps(data).encode("utf-8") if data else None
     try:
         with urllib.request.urlopen(req, data=body, timeout=10) as response:
-            return json.loads(response.read().decode("utf-8"))
+            raw = response.read().decode("utf-8")
+            return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as e:
         err_msg = e.read().decode("utf-8")
         print(f"[-] HTTP Error {e.code}: {err_msg}")
@@ -38,6 +42,21 @@ def make_request(url, method="GET", data=None):
     except Exception as e:
         print(f"[-] Error: {e}")
         return None
+
+def list_all_documents(collection):
+    result = []
+    token = None
+    while True:
+        query = {"pageSize": "300"}
+        if token:
+            query["pageToken"] = token
+        page = make_request(f"{BASE_URL}/{collection}?{urllib.parse.urlencode(query)}")
+        if page is None:
+            raise RuntimeError(f"{collection} 조회 실패")
+        result.extend(page.get("documents", []))
+        token = page.get("nextPageToken")
+        if not token:
+            return result
 
 def show_summary():
     print("="*60)
@@ -52,22 +71,22 @@ def show_summary():
         revenue = f.get("totalRevenue", {}).get("integerValue", "0")
         plays = f.get("totalPlays", {}).get("integerValue", "0")
         successes = f.get("totalSuccesses", {}).get("integerValue", "0")
-        dolls = f.get("totalDolls", {}).get("integerValue", "100")
+        dolls = f.get("totalDolls", {}).get("integerValue", "미확인")
+        legendary = f.get("totalLegendaryDolls", {}).get("integerValue", "미확인")
         reg = f.get("totalRegistrations", {}).get("integerValue", "0")
 
         print(f"💰 총 누적 매출: {int(revenue):,} 원")
         print(f"🎮 총 게임 플레이 수: {plays} 회")
         print(f"🏆 총 인형/상품 당첨 수: {successes} 회")
         print(f"🧸 남은 인형 재고: {dolls} 개")
+        print(f"✨ 남은 레전드 인형 재고: {legendary} 개")
         print(f"📝 총 참가자 등록 수: {reg} 명")
     else:
         print("[-] GameState/stats 문서를 불러올 수 없습니다.")
 
     # 2. Participants 집계
-    part_url = f"{BASE_URL}/Participants?pageSize=300"
-    part_data = make_request(part_url)
-    if part_data and "documents" in part_data:
-        docs = part_data["documents"]
+    docs = list_all_documents("Participants")
+    if docs:
         male_cnt = 0
         female_cnt = 0
         picked_cnt = 0
@@ -87,11 +106,10 @@ def show_summary():
         print(f"매칭 성사(뽑힘): {picked_cnt}명 / 미뽑힘: {len(docs) - picked_cnt}명")
 
     # 3. RhythmLeaderboard 확인
-    rhythm_url = f"{BASE_URL}/RhythmLeaderboard?pageSize=50"
-    rhythm_data = make_request(rhythm_url)
-    if rhythm_data and "documents" in rhythm_data:
+    rhythm_data = list_all_documents("RhythmLeaderboard")
+    if rhythm_data:
         scores = []
-        for d in rhythm_data["documents"]:
+        for d in rhythm_data:
             f = d.get("fields", {})
             title = f.get("songTitle", {}).get("stringValue", "-")
             acc = f.get("accuracy", {}).get("doubleValue", 0.0)
@@ -111,18 +129,14 @@ def purge_personal_data():
         print("[*] 개인정보 삭제가 취소되었습니다.")
         return
 
-    part_url = f"{BASE_URL}/Participants?pageSize=300"
-    part_data = make_request(part_url)
-    if not part_data or "documents" not in part_data:
-        print("[-] 삭제할 참가자 데이터가 없습니다.")
-        return
-
-    docs = part_data["documents"]
-    print(f"[*] {len(docs)}명의 개인정보 삭제 시작...")
-    for doc in docs:
-        doc_path = doc["name"]
-        del_url = f"https://firestore.googleapis.com/v1/{doc_path}"
-        make_request(del_url, method="DELETE")
+    for collection in ("Participants", "ParticipantKeys", "ProfileClaims", "MatchResults", "GameRounds"):
+        docs = list_all_documents(collection)
+        print(f"[*] {collection}: {len(docs)}건 삭제 중...")
+        for doc in docs:
+            doc_path = doc["name"]
+            del_url = f"https://firestore.googleapis.com/v1/{doc_path}"
+            if make_request(del_url, method="DELETE") is None:
+                raise RuntimeError(f"삭제 실패: {doc_path}")
 
     print("[+] 모든 참가자 개인정보가 안전하게 파기되었습니다.")
 

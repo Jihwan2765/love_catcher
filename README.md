@@ -1,3 +1,10 @@
+## 2026-09-26 Firebase 운영 주의
+
+현재 변경은 **운영 빌드 전 테스트가 필요**합니다. 스태프 Firebase 이메일 로그인과 `boothStaff` 클레임, `FIREBASE_WEB_API_KEY`, `GameState/stats`의 실제 재고 6개 정수 필드가 필요합니다. `firestore.rules`와 인덱스는 저장소에 있지만 서버 배포 여부는 확인되지 않았습니다. 공개 규칙이 남아 있으면 참가자 데이터는 보호되지 않습니다.
+
+인형뽑기는 인스타 ID를 필수로 확인하며 기존 참가자를 재사용합니다. 지급 확정이 불분명하면 하위 상품으로 자동 변경하지 않고 운영진이 처리합니다. 일반·레전드 재고는 사격·리듬과 공유합니다. 기존 데이터가 있다면 `admin_tools/migrate_participant_keys.py`로 정규화 인덱스와 이미 뽑힌 프로필 잠금을 먼저 준비하세요. 결제 금액과 코인 묶음은 변경하지 않았습니다. Windows 빌드와 별도 Firebase 프로젝트에서 네트워크 오류, 버튼 연타, 중복 참가자, 마지막 재고 동시 지급을 반드시 검증하세요.
+
+
 # 🧸 러브캐처 (Love Catcher)
 > **캠퍼스 축제 및 오프라인 행사를 위한 3D 물리 기반 아케이드 인형뽑기 소개팅 게임**
 
@@ -38,7 +45,7 @@
 
 - 🕹️ **리얼 물리 엔진 기반 손맛**: 단순 스크립트 애니메이션이 아닌 Unity PhysX(`HingeJoint`, `Motor`) 기반의 실제 집게 물리와 마찰력을 구현했습니다.
 - 💘 **실시간 스마트 이성 매칭**: 인형을 획득하면 참가자의 성별 정보를 바탕으로 **Firebase Firestore에서 아직 매칭되지 않은 반대 성별 참가자의 인스타그램 프로필 카드가 실시간 매칭**됩니다.
-- ☁️ **경량 REST API 백엔드**: 무거운 SDK 설치나 버전 충돌 없이 `UnityWebRequest` 기반 순수 REST 통신으로 동작하며, 오프라인 환경에서도 자체 더미 데이터 풀로 무중단 진행됩니다.
+- ☁️ **경량 REST API 백엔드**: `UnityWebRequest`로 인증된 Firestore REST 요청을 보냅니다. 연결이 끊기면 지급을 보류하고 운영진이 처리합니다.
 - 🛡️ **완벽한 환경설정 분리**: `.env` 환경변수 시스템을 지원하여 Firebase 프로젝트 ID나 부스 결제 계좌 등의 민감 정보 노출 없이 안전하게 공유 및 배포할 수 있습니다.
 
 ---
@@ -56,7 +63,7 @@ flowchart TD
     CatchCheck -- "인형 획득 성공 🎉" --> RewardRoll["확률별 보상 판정<br/>1. 레전더리<br/>2. 인형<br/>3. 이성 인스타 아이디<br/>4. 사탕"]
     RewardRoll -- "인스타 당첨" --> MatchLogic["Firebase 실시간 반대 성별 매칭"]
     MatchLogic -- "지급 가능" --> LockTarget[("DB: 해당 참가자 'isPicked' 잠금")]
-    MatchLogic -- "대상 없음 / 조회 실패" --> Reroll["인스타 제외 비율 유지 재추첨"]
+    MatchLogic -- "대상 없음 / 조회 실패" --> Reroll["지급 보류 · 운영진 확인"]
     RewardRoll -- "그 외 보상" --> SuccessPopup["보상 결과 팝업 & 수령 안내"]
     LockTarget --> SuccessPopup
     Reroll --> SuccessPopup
@@ -79,7 +86,7 @@ flowchart TD
 ### 2. 💘 스마트 이성 매칭 & 유연한 보상 룰 (`GameFlowManager`)
 - 플레이어의 성별을 판별하여 DB 내 **반대 성별 풀 중 아직 뽑히지 않은(`isPicked == false`) 참가자**를 무작위 추천합니다.
 - 성별별 당첨 확률 튜닝(남성/여성 차등 확률) 지원.
-- 4가지 보상 타입(레전더리, 인형, 이성 인스타 아이디, 사탕)을 성별과 참가자의 인스타 입력 여부에 맞는 개발자 설정으로 추첨합니다. 인스타 당첨 후 지급 대상이 없거나 Firebase 조회가 실패하면 인스타를 제외한 보상 비율로 재추첨합니다.
+- 4가지 보상 타입(레전더리, 인형, 이성 인스타 아이디, 사탕)을 설정 확률로 추첨합니다. 인스타 당첨 후 대상 조회·확정이 실패하면 지급을 보류하고 운영진이 확인합니다.
 
 ### 3. 🔥 실패 방지 천장(Pity) 자석 어시스트 (`ClawPityMagnet`)
 - 연속 5회차 실패 시 화면에 "🔥 **MAX 파워 모드 발동!** 🔥" 배너가 표시됩니다.
@@ -87,7 +94,7 @@ flowchart TD
 
 ### 4. ☁️ SDK-Free Firebase Firestore REST 통신 (`FirebaseRESTService`)
 - 공식 SDK 없이 경량 HTTP REST API로 구글 Firestore와 직접 통신합니다.
-- 참가자 실시간 등록, 중복 인스타그램 ID 실시간 검증, 뽑힌 참가자 상태 PATCH, 남은 실물 인형 재고 및 누적 매출 실시간 갱신을 지원합니다.
+- 스태프 인증을 거친 참가자 등록·중복 확인, 원자적 프로필 선점과 인형 재고 차감, 누적 매출 기록을 지원합니다.
 
 ### 5. 💰 현장 운영 최적화 코인 시스템 & 리텐션 UX (`ClawMachineUIManager`)
 - **현장 결제 패키지**: 1회(500원), 3회(1,500원), 6회(2,500원), 13회(5,000원) 원클릭 코인 충전 지원.
@@ -101,7 +108,7 @@ flowchart TD
 ### 1. 필수 요구사항
 - **Unity Editor**: `Unity 6 (6000.2.10f1)` 이상
 - **OS**: Windows 10 / 11 (권장)
-- **인터넷 연결**: Firebase Firestore 연동 시 필요 (오프라인 모드도 지원)
+- **인터넷 연결**: Firebase Firestore 연동과 지급 확정에 필수입니다. 끊기면 지급을 보류합니다.
 
 ### 2. 프로젝트 열기
 1. 본 레포지토리를 클론합니다:
@@ -145,31 +152,23 @@ flowchart TD
 
 1. [Firebase 콘솔](https://console.firebase.google.com/)에 접속하여 새 프로젝트를 생성합니다.
 2. 좌측 메뉴에서 **빌드 > Firestore Database**를 선택하고 **데이터베이스 만들기**를 클릭합니다.
-3. **규칙(Rules)** 탭으로 이동하여 테스트 기간 동안 아래와 같이 읽기/쓰기를 허용합니다:
-   ```javascript
-   rules_version = '2';
-   service cloud.firestore {
-     match /databases/{database}/documents {
-       match /{document=**} {
-         allow read, write: if true;
-       }
-     }
-   }
-   ```
-4. **프로젝트 설정 > 일반**에서 확인되는 **프로젝트 ID**(예: `my-festival-catcher`)를 복사하여 `.env` 파일의 `FIREBASE_PROJECT_ID`에 입력합니다.
+3. 별도 테스트 프로젝트에서 `firestore.rules`와 `firestore.indexes.json`을 배포해 무인증·일반 계정 거부, 스태프 계정 허용을 검증한 뒤 운영 프로젝트에 배포합니다. 전체 공개 규칙은 사용하지 않습니다.
+4. Firebase Authentication 이메일/비밀번호 제공자와 스태프 계정을 설정하고, `admin_tools/grant_staff_claim.py`로 `boothStaff` 클레임을 부여합니다. 재고 수정 담당자에게는 `boothAdmin`도 부여합니다. 계정 비밀번호와 서비스 계정 키는 저장소에 올리지 않습니다.
+5. 같은 Firebase 프로젝트의 Web API Key를 `FIREBASE_WEB_API_KEY` 또는 `Assets/Resources/FirebaseConfig.json`에 입력합니다. 기존 참가자가 있으면 `admin_tools/migrate_participant_keys.py`로 인덱스를 먼저 준비합니다.
+6. `GameState/stats`에 `totalDolls`, `totalLegendaryDolls`, `totalRevenue`, `totalRegistrations`, `totalPlays`, `totalSuccesses`를 정수로 만들고 실제 초기 재고를 입력합니다. 이 문서가 없으면 지급하지 않습니다.
 
 #### 🗄️ Firestore 컬렉션 구조
 게임이 실행되면 자동으로 아래 컬렉션이 사용됩니다:
 - `Participants` 컬렉션:
   - `name` (string): 참가자 이름
   - `gender` (string): 성별 (`"남"` 또는 `"여"`)
-  - `insta` (string): 인스타그램 아이디 (예: `@my_id`)
+  - `insta` (string): 소문자로 정규화한 인스타그램 아이디 (예: `my_id`)
   - `bio` (string): 한줄 소개
   - `isPicked` (boolean): 매칭 완료 여부 (뽑히면 `true`로 잠금)
   - `attempts` (integer): 누적 시도 횟수
 - `GameState/stats` 문서:
   - `totalDolls` (integer): 남은 실물 인형 재고 수량
-  - `totalLegendaryDolls` (integer): 남은 레전더리 인형 재고 수량(기본값 10)
+  - `totalLegendaryDolls` (integer): 남은 레전더리 인형 재고 수량(운영진이 초기값 설정)
   - `totalRevenue` (integer): 현장 총 누적 매출 (원)
   - `totalRegistrations` (integer): 총 참가 등록 수
   - `totalPlays` (integer): 총 플레이 수
