@@ -82,6 +82,27 @@ def main():
             token,
             200,
         ),
+        (
+            "스태프 이성 후보 쿼리·복합 인덱스",
+            root + ":runQuery",
+            {
+                "structuredQuery": {
+                    "from": [{"collectionId": "Participants"}],
+                    "where": {
+                        "compositeFilter": {
+                            "op": "AND",
+                            "filters": [
+                                {"fieldFilter": {"field": {"fieldPath": "gender"}, "op": "EQUAL", "value": {"stringValue": "여"}}},
+                                {"fieldFilter": {"field": {"fieldPath": "isPicked"}, "op": "EQUAL", "value": {"booleanValue": False}}},
+                            ],
+                        }
+                    },
+                    "limit": 1,
+                }
+            },
+            token,
+            200,
+        ),
     ]
     failed = False
     for name, url, payload, bearer, expected in checks:
