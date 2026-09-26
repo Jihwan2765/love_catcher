@@ -79,9 +79,19 @@ namespace ClawMachine.UI
         private Button btnCoinStart;
         private int currentCoins = 0;
         private float lastPlayStartAt = -10f;
+        private string pendingPlayRoundId;
+        private string pendingPlayInsta;
+        private int pendingPlayRevenue;
+        private bool playWriteInFlight;
+        private string playRecordHoldText;
 
         private bool BeginPlayTransition()
         {
+            if (pendingPlayRoundId != null)
+            {
+                playRecordHoldText = "이전 회차 기록 확인 중입니다. 운영진에게 알려 주세요.";
+                return false;
+            }
             if (BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAuthenticated)
             {
                 ShowRegistrationError("스태프가 Firebase에 로그인한 뒤 시작해 주세요.");
@@ -1163,8 +1173,18 @@ namespace ClawMachine.UI
                     ToggleDevMode();
                 }
 
+                if (UnityEngine.InputSystem.Keyboard.current.rKey.wasPressedThisFrame &&
+                    UnityEngine.InputSystem.Keyboard.current.ctrlKey.isPressed &&
+                    UnityEngine.InputSystem.Keyboard.current.altKey.isPressed &&
+                    BoothStaffAuth.Instance != null && BoothStaffAuth.Instance.IsAuthenticated)
+                {
+                    RetryPendingPlayRecord();
+                }
+
                 // Operator R key retry override when bottom bar, fail overlay, or payment overlay is visible
-                if (UnityEngine.InputSystem.Keyboard.current.rKey.wasPressedThisFrame)
+                if (UnityEngine.InputSystem.Keyboard.current.rKey.wasPressedThisFrame &&
+                    !UnityEngine.InputSystem.Keyboard.current.ctrlKey.isPressed &&
+                    !UnityEngine.InputSystem.Keyboard.current.altKey.isPressed)
                 {
                     bool isRetryEligible = (retryButton != null && retryButton.resolvedStyle.display == DisplayStyle.Flex) ||
                                            (failRetryOverlay != null && failRetryOverlay.resolvedStyle.display == DisplayStyle.Flex) ||
@@ -2746,14 +2766,45 @@ namespace ClawMachine.UI
 
         private void RecordPlaySession(int revenue)
         {
-            if (ClawMachine.Mechanics.FirebaseRESTService.Instance != null)
+            if (pendingPlayRoundId != null)
             {
-                ClawMachine.Mechanics.FirebaseRESTService.Instance.IncrementPlayCountAndRevenue(revenue,
-                    (success, error) =>
-                    {
-                        if (!success) ShowRegistrationError("플레이 DB 기록 확인 실패. 운영진이 결제·회차를 확인해 주세요. " + error);
-                    });
+                Debug.LogError("[LoveCatcher] 이전 플레이 저장 확인 전 새 회차 요청");
+                return;
             }
+            pendingPlayRoundId = Guid.NewGuid().ToString("N");
+            pendingPlayRevenue = revenue;
+            pendingPlayInsta = registeredInsta;
+            RetryPendingPlayRecord();
+        }
+
+        private void RetryPendingPlayRecord()
+        {
+            if (pendingPlayRoundId == null || playWriteInFlight ||
+                ClawMachine.Mechanics.FirebaseRESTService.Instance == null) return;
+            playWriteInFlight = true;
+            playRecordHoldText = "회차 기록 확인 중입니다. 다음 플레이를 시작하지 마세요.";
+            ClawMachine.Mechanics.FirebaseRESTService.Instance.IncrementPlayCountAndRevenue(
+                pendingPlayRevenue, pendingPlayInsta, pendingPlayRoundId, (success, error) =>
+                {
+                    playWriteInFlight = false;
+                    if (success)
+                    {
+                        pendingPlayRoundId = null;
+                        pendingPlayInsta = null;
+                        playRecordHoldText = null;
+                        return;
+                    }
+                    playRecordHoldText = "플레이 기록 보류 · 운영진 Ctrl+Alt+R 재시도\n회차: " +
+                        pendingPlayRoundId;
+                    Debug.LogError("[LoveCatcher] " + playRecordHoldText + " / " + error);
+                });
+        }
+
+        private void OnGUI()
+        {
+            if (string.IsNullOrEmpty(playRecordHoldText)) return;
+            float width = Mathf.Min(700f, Screen.width - 40f);
+            GUI.Box(new Rect((Screen.width - width) * 0.5f, 10f, width, 70f), playRecordHoldText);
         }
     }
 }

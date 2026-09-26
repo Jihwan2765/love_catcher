@@ -18,6 +18,12 @@ namespace ClawMachine.Mechanics
         [Serializable] private class AggregateItems { public AggregateItem[] items; }
         [Serializable] private class ParticipantKeyFields { public FirestoreStringField participantKey; }
         [Serializable] private class ParticipantKeyDocument { public ParticipantKeyFields fields; }
+        [Serializable] private class PlayReceiptFields
+        {
+            public FirestoreStringField kind, participantKey, insta;
+            public FirestoreIntField revenue;
+        }
+        [Serializable] private class PlayReceiptDocument { public PlayReceiptFields fields; }
         private static FirebaseRESTService instance;
         public static FirebaseRESTService Instance
         {
@@ -443,7 +449,8 @@ namespace ClawMachine.Mechanics
             try { indexed = JsonUtility.FromJson<ParticipantKeyDocument>(indexJson); }
             catch (Exception) { callback?.Invoke(false); yield break; }
             string participantKey = indexed?.fields?.participantKey?.stringValue;
-            if (string.IsNullOrWhiteSpace(participantKey) || participantKey.Contains("/"))
+            if (string.IsNullOrWhiteSpace(participantKey) ||
+                !System.Text.RegularExpressions.Regex.IsMatch(participantKey, "^[a-zA-Z0-9._-]{1,1500}$"))
             { callback?.Invoke(false); yield break; }
 
             string root = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents";
@@ -1161,9 +1168,10 @@ namespace ClawMachine.Mechanics
             StartCoroutine(IncrementStatCoroutine("totalRegistrations", 1));
         }
 
-        public void IncrementPlayCountAndRevenue(int revenue, Action<bool, string> callback = null)
+        public void IncrementPlayCountAndRevenue(int revenue, string insta, string roundId,
+            Action<bool, string> callback = null)
         {
-            StartCoroutine(IncrementPlayAndRevenueCoroutine(revenue, callback));
+            StartCoroutine(IncrementPlayAndRevenueCoroutine(revenue, insta, roundId, callback));
         }
 
         public void IncrementSuccessCount()
@@ -1177,11 +1185,104 @@ namespace ClawMachine.Mechanics
             yield return IncrementAtomic(null, $"{{\"fieldPath\":\"{fieldName}\",\"increment\":{{\"integerValue\":\"{amount}\"}}}}", null);
         }
 
-        private IEnumerator IncrementPlayAndRevenueCoroutine(int revenue, Action<bool, string> callback)
+        private IEnumerator IncrementPlayAndRevenueCoroutine(int revenue, string insta, string roundId,
+            Action<bool, string> callback)
         {
-            string transforms = "{\"fieldPath\":\"totalPlays\",\"increment\":{\"integerValue\":\"1\"}}," +
-                "{\"fieldPath\":\"totalRevenue\",\"increment\":{\"integerValue\":\"" + revenue + "\"}}";
-            yield return IncrementAtomic("love_" + Guid.NewGuid().ToString("N"), transforms, callback);
+            string handle = (insta ?? "").Trim().TrimStart('@').ToLowerInvariant();
+            if (revenue < 0 || !System.Text.RegularExpressions.Regex.IsMatch(handle, "^[a-z0-9._]{1,30}$") ||
+                !System.Text.RegularExpressions.Regex.IsMatch(roundId ?? "", "^[a-f0-9]{32}$") ||
+                string.IsNullOrEmpty(firebaseProjectId))
+            { callback?.Invoke(false, "참가자 또는 Firebase 설정을 확인해 주세요."); yield break; }
+
+            string root = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents";
+            string prefix = $"projects/{firebaseProjectId}/databases/(default)/documents/";
+            string receiptPath = "GameRounds/love_" + roundId;
+            using (var existing = UnityWebRequest.Get(root + "/" + receiptPath))
+            {
+                yield return SendAuthorized(existing);
+                if (existing.responseCode == 200)
+                {
+                    PlayReceiptDocument saved = null;
+                    try { saved = JsonUtility.FromJson<PlayReceiptDocument>(existing.downloadHandler.text); }
+                    catch (Exception) { }
+                    bool same = saved?.fields?.kind?.stringValue == "love" &&
+                        saved.fields.insta?.stringValue == handle &&
+                        saved.fields.revenue?.integerValue == revenue.ToString();
+                    callback?.Invoke(same, same ? null : "회차 기록 충돌: " + roundId);
+                    yield break;
+                }
+                if (existing.responseCode != 404)
+                { callback?.Invoke(false, "회차 조회 실패: " + roundId); yield break; }
+            }
+            string participantKey = null;
+            // 첫 플레이는 UI의 등록 요청과 함께 시작될 수 있으므로 인덱스가 생길 때까지
+            // 코루틴으로만 기다립니다. 메인 스레드를 막거나 임의의 프로필을 만들지 않습니다.
+            for (int attempt = 0; attempt < 20; attempt++)
+            {
+                using (var index = UnityWebRequest.Get(root + "/ParticipantKeys/insta_" + handle))
+                {
+                    yield return SendAuthorized(index);
+                    if (index.responseCode == 200)
+                    {
+                        try
+                        {
+                            participantKey = JsonUtility.FromJson<ParticipantKeyDocument>(index.downloadHandler.text)
+                                ?.fields?.participantKey?.stringValue;
+                        }
+                        catch (Exception) { participantKey = null; }
+                        if (string.IsNullOrWhiteSpace(participantKey) ||
+                            !System.Text.RegularExpressions.Regex.IsMatch(participantKey, "^[a-zA-Z0-9._-]{1,1500}$"))
+                        { callback?.Invoke(false, "참가자 인덱스 확인 필요: " + roundId); yield break; }
+                        bool valid = false;
+                        yield return ValidateParticipantKey(index.downloadHandler.text, handle, result => valid = result);
+                        if (!valid)
+                        { callback?.Invoke(false, "참가자 문서 확인 필요: " + roundId); yield break; }
+                        break;
+                    }
+                    if (index.responseCode != 404)
+                    { callback?.Invoke(false, "참가자 조회 실패: " + roundId); yield break; }
+                }
+                yield return new WaitForSecondsRealtime(1f);
+            }
+            if (participantKey == null)
+            { callback?.Invoke(false, "참가자 등록 확인 필요: " + roundId); yield break; }
+
+            string receiptFields = "\"kind\":{\"stringValue\":\"love\"},\"participantKey\":{\"stringValue\":\"" +
+                participantKey + "\"},\"insta\":{\"stringValue\":\"" + handle +
+                "\"},\"revenue\":{\"integerValue\":\"" + revenue + "\"}";
+            string payload = "{\"writes\":[{\"update\":{\"name\":\"" + prefix + receiptPath +
+                "\",\"fields\":{" + receiptFields + "}},\"currentDocument\":{\"exists\":false}}," +
+                "{\"transform\":{\"document\":\"" + prefix + "GameState/stats\",\"fieldTransforms\":[" +
+                "{\"fieldPath\":\"totalPlays\",\"increment\":{\"integerValue\":\"1\"}}," +
+                "{\"fieldPath\":\"totalRevenue\",\"increment\":{\"integerValue\":\"" + revenue + "\"}}]}," +
+                "\"currentDocument\":{\"exists\":true}}," +
+                "{\"transform\":{\"document\":\"" + prefix + "Participants/" + participantKey +
+                "\",\"fieldTransforms\":[{\"fieldPath\":\"attempts\",\"increment\":{\"integerValue\":\"1\"}}]}," +
+                "\"currentDocument\":{\"exists\":true}}]}";
+            using (var request = new UnityWebRequest(root + ":commit", "POST"))
+            {
+                request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(payload));
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.SetRequestHeader("Content-Type", "application/json");
+                yield return SendAuthorized(request);
+                if (request.responseCode == 200) { callback?.Invoke(true, null); yield break; }
+                using (var check = UnityWebRequest.Get(root + "/" + receiptPath))
+                {
+                    yield return SendAuthorized(check);
+                    if (check.responseCode == 200)
+                    {
+                        PlayReceiptDocument saved = null;
+                        try { saved = JsonUtility.FromJson<PlayReceiptDocument>(check.downloadHandler.text); }
+                        catch (Exception) { }
+                        if (saved?.fields?.kind?.stringValue == "love" &&
+                            saved.fields.participantKey?.stringValue == participantKey &&
+                            saved.fields.insta?.stringValue == handle &&
+                            saved.fields.revenue?.integerValue == revenue.ToString())
+                        { callback?.Invoke(true, null); yield break; }
+                    }
+                }
+                callback?.Invoke(false, "회차 기록 확인 필요: " + roundId);
+            }
         }
 
         private IEnumerator IncrementAtomic(string roundId, string transforms, Action<bool, string> callback)
