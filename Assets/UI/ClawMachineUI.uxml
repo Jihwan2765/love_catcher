@@ -230,6 +230,18 @@
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
+        <ui:VisualElement name="DevSceneReloadConfirmOverlay" class="overlay-screen" style="display: none;">
+            <ui:VisualElement class="popup-card" style="width: 540px; background-color: rgb(18, 14, 28); border-color: rgb(255, 59, 48); border-width: 3px;">
+                <ui:Label text="⚠ 게임 복구 (씬 리로드)" class="popup-title" style="color: rgb(255, 59, 48); font-size: 24px; -unity-text-align: middle-center; margin-bottom: 18px;" />
+                <ui:Label text="씬을 다시 불러오면 다음 상태가 초기화됩니다." class="form-label" style="color: rgb(255, 255, 255); font-size: 16px; -unity-text-align: middle-center; margin-bottom: 14px;" />
+                <ui:Label text="1. 하트와 집게 위치&#10;2. 집게 힘&#10;3. 보상 확률" class="form-label" style="width: 100%; color: rgb(255, 215, 0); font-size: 17px; line-height: 26px; -unity-text-align: middle-left; margin-left: 55px; margin-bottom: 18px;" />
+                <ui:Label text="참가자 정보와 보유 코인은 유지됩니다.&#10;초기화를 진행하시겠습니까?" class="form-label" style="color: rgb(255, 255, 255); font-size: 17px; font-weight: bold; line-height: 25px; -unity-text-align: middle-center; margin-bottom: 24px;" />
+                <ui:VisualElement style="width: 100%; flex-direction: row; justify-content: center;">
+                    <ui:Button name="DevSceneReloadCancelBtn" text="취소" class="btn-secondary" style="width: 150px; height: 46px; margin-right: 8px; font-size: 16px;" />
+                    <ui:Button name="DevSceneReloadConfirmBtn" text="초기화 진행" class="btn-primary" style="width: 150px; height: 46px; margin-left: 8px; font-size: 16px; background-color: rgb(190, 25, 25); border-color: rgb(255, 90, 90);" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
         <ui:VisualElement name="DevDbOverlay" class="overlay-screen" style="display: none;">
             <ui:VisualElement name="DevDbCard" class="popup-card" style="width: 900px; height: 88%; border-color: rgb(0, 238, 255);">
                 <ui:Label text="🗄️ 데이터베이스 뷰어 🗄️" class="popup-title" style="color: rgb(0, 238, 255); margin-bottom: 12px;" />

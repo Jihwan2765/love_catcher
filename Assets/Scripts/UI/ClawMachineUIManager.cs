@@ -36,6 +36,7 @@ namespace ClawMachine.UI
         private VisualElement quitConfirmOverlay;
         private VisualElement devModeOverlay;
         private VisualElement devResetStatsConfirmOverlay;
+        private VisualElement devSceneReloadConfirmOverlay;
         private VisualElement devDbOverlay;
         private VisualElement devDeleteParticipantConfirmOverlay;
         private VisualElement failRetryOverlay;
@@ -172,6 +173,8 @@ namespace ClawMachine.UI
         private Button devDbCloseBtn;
         private TextField devDbSearchInput;
         private Button devReloadSceneBtn;
+        private Button devSceneReloadConfirmBtn;
+        private Button devSceneReloadCancelBtn;
         private Label devDeleteParticipantTargetLabel;
         private Label devDeleteParticipantStatusLabel;
         private Button devDeleteParticipantConfirmBtn;
@@ -295,6 +298,7 @@ namespace ClawMachine.UI
             quitConfirmOverlay = root.Q<VisualElement>("QuitConfirmOverlay");
             devModeOverlay = root.Q<VisualElement>("DevModeOverlay");
             devResetStatsConfirmOverlay = root.Q<VisualElement>("DevResetStatsConfirmOverlay");
+            devSceneReloadConfirmOverlay = root.Q<VisualElement>("DevSceneReloadConfirmOverlay");
             devDbOverlay = root.Q<VisualElement>("DevDbOverlay");
             devDeleteParticipantConfirmOverlay = root.Q<VisualElement>("DevDeleteParticipantConfirmOverlay");
             failRetryOverlay = root.Q<VisualElement>("FailRetryOverlay");
@@ -410,6 +414,8 @@ namespace ClawMachine.UI
             devDeleteParticipantStatusLabel = root.Q<Label>("DevDeleteParticipantStatusLabel");
             devDeleteParticipantConfirmBtn = root.Q<Button>("DevDeleteParticipantConfirmBtn");
             devDeleteParticipantCancelBtn = root.Q<Button>("DevDeleteParticipantCancelBtn");
+            devSceneReloadConfirmBtn = root.Q<Button>("DevSceneReloadConfirmBtn");
+            devSceneReloadCancelBtn = root.Q<Button>("DevSceneReloadCancelBtn");
 
             // Dev DB 직접 등록 폼 Fields
             devAddName = root.Q<TextField>("DevAddName");
@@ -522,6 +528,10 @@ namespace ClawMachine.UI
                 devDeleteParticipantCancelBtn.clicked += () => { playBtnSound(); HideDevDeleteParticipantConfirmation(); };
             if (devDeleteParticipantConfirmBtn != null)
                 devDeleteParticipantConfirmBtn.clicked += () => { playBtnSound(); BeginDevParticipantDelete(); };
+            if (devSceneReloadCancelBtn != null)
+                devSceneReloadCancelBtn.clicked += () => { playBtnSound(); HideSceneReloadConfirmation(); };
+            if (devSceneReloadConfirmBtn != null)
+                devSceneReloadConfirmBtn.clicked += ConfirmSceneReload;
 
             // Dev DB 직접 등록 폼 Events
             if (devAddGenderMaleBtn != null)
@@ -946,31 +956,7 @@ namespace ClawMachine.UI
             devReloadSceneBtn.style.backgroundColor = new Color(0.8f, 0f, 0f);
             devReloadSceneBtn.style.marginTop = 10;
             devReloadSceneBtn.style.width = new Length(100, LengthUnit.Percent);
-            devReloadSceneBtn.clicked += () => {
-                var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
-                if (firebase != null && firebase.IsWriteInProgress) return;
-
-                var gameFlow = ClawMachine.Mechanics.GameFlowManager.Instance;
-                if (gameFlow == null || !gameFlow.HasRecoverableSession ||
-                    string.IsNullOrWhiteSpace(registeredName) ||
-                    !ClawMachine.Mechanics.GameFlowManager.IsSupportedGender(registeredGender)) return;
-
-                pendingSceneRecovery = new SceneRecoveryData
-                {
-                    name = registeredName,
-                    insta = registeredInsta,
-                    bio = registeredBio,
-                    gender = registeredGender
-                };
-                hasPendingSceneRecovery = true;
-
-                // 보유 코인은 차감하지 않고 현재 값을 확실히 보존합니다.
-                PlayerPrefs.SetInt("LoveCatcher_Coins", currentCoins);
-                PlayerPrefs.Save();
-
-                playBtnSound();
-                UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
-            };
+            devReloadSceneBtn.clicked += ShowSceneReloadConfirmation;
             if (devModeOverlay != null)
             {
                 var devPanel = devModeOverlay.Q<VisualElement>("DevModeCard");
@@ -1165,7 +1151,8 @@ namespace ClawMachine.UI
                                            (failRetryOverlay != null && failRetryOverlay.resolvedStyle.display == DisplayStyle.Flex) ||
                                            (failOverlay != null && failOverlay.resolvedStyle.display == DisplayStyle.Flex);
 
-                    if (isRetryEligible && ClawMachine.Mechanics.GameFlowManager.Instance != null)
+                    if (isRetryEligible && devSceneReloadConfirmOverlay?.style.display != DisplayStyle.Flex &&
+                        ClawMachine.Mechanics.GameFlowManager.Instance != null)
                     {
                         HideAllOverlays();
                         ClawMachine.Mechanics.GameFlowManager.Instance.RequestRetry();
@@ -1227,12 +1214,10 @@ namespace ClawMachine.UI
 
             var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
             bool isSaving = firebase != null && firebase.IsWriteInProgress;
-            var gameFlow = ClawMachine.Mechanics.GameFlowManager.Instance;
-            bool canRecoverSession = gameFlow != null && gameFlow.HasRecoverableSession &&
-                                     !string.IsNullOrWhiteSpace(registeredName) &&
-                                     ClawMachine.Mechanics.GameFlowManager.IsSupportedGender(registeredGender);
+            bool canRecoverSession = HasRecoverableSceneSession();
 
             devReloadSceneBtn.SetEnabled(!isSaving && canRecoverSession);
+            devSceneReloadConfirmBtn?.SetEnabled(!isSaving && canRecoverSession);
             if (isSaving)
             {
                 devReloadSceneBtn.text = "Firebase 저장 중...";
@@ -1245,6 +1230,53 @@ namespace ClawMachine.UI
             {
                 devReloadSceneBtn.text = "게임 복구 (씬 리로드)";
             }
+        }
+
+        private bool HasRecoverableSceneSession()
+        {
+            var gameFlow = ClawMachine.Mechanics.GameFlowManager.Instance;
+            return gameFlow != null && gameFlow.HasRecoverableSession &&
+                   !string.IsNullOrWhiteSpace(registeredName) &&
+                   ClawMachine.Mechanics.GameFlowManager.IsSupportedGender(registeredGender);
+        }
+
+        private void ShowSceneReloadConfirmation()
+        {
+            var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
+            if ((firebase != null && firebase.IsWriteInProgress) || !HasRecoverableSceneSession()) return;
+
+            if (buttonClickSound != null && ClawMachine.Audio.SoundManager.Instance != null)
+                ClawMachine.Audio.SoundManager.Instance.PlaySFX(buttonClickSound);
+            ShowOverlay(devSceneReloadConfirmOverlay);
+        }
+
+        private void HideSceneReloadConfirmation()
+        {
+            HideOverlay(devSceneReloadConfirmOverlay);
+            SetNavigationGroup(NavGroup.None, null);
+        }
+
+        private void ConfirmSceneReload()
+        {
+            var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
+            if ((firebase != null && firebase.IsWriteInProgress) || !HasRecoverableSceneSession()) return;
+
+            pendingSceneRecovery = new SceneRecoveryData
+            {
+                name = registeredName,
+                insta = registeredInsta,
+                bio = registeredBio,
+                gender = registeredGender
+            };
+            hasPendingSceneRecovery = true;
+
+            // 보유 코인은 차감하지 않고 현재 값을 확실히 보존합니다.
+            PlayerPrefs.SetInt("LoveCatcher_Coins", currentCoins);
+            PlayerPrefs.Save();
+
+            if (buttonClickSound != null && ClawMachine.Audio.SoundManager.Instance != null)
+                ClawMachine.Audio.SoundManager.Instance.PlaySFX(buttonClickSound);
+            UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
         }
 
         private IEnumerator ResumeGameAfterSceneReload()
@@ -1277,6 +1309,7 @@ namespace ClawMachine.UI
         private void ToggleDevMode()
         {
             if (devModeOverlay == null) return;
+            if (devSceneReloadConfirmOverlay?.style.display == DisplayStyle.Flex) return;
 
             if (devModeOverlay.style.display == DisplayStyle.Flex)
             {
@@ -1660,6 +1693,7 @@ namespace ClawMachine.UI
             Success,
             QuitConfirm,
             DevStatsResetConfirm,
+            DevSceneReloadConfirm,
             DevParticipantDeleteConfirm,
             Fail
         }
@@ -1771,6 +1805,14 @@ namespace ClawMachine.UI
             else if (button == devResetStatsConfirmBtn)
             {
                 BeginDevStatsReset();
+            }
+            else if (button == devSceneReloadCancelBtn)
+            {
+                HideSceneReloadConfirmation();
+            }
+            else if (button == devSceneReloadConfirmBtn)
+            {
+                ConfirmSceneReload();
             }
             else if (button == devDeleteParticipantCancelBtn)
             {
@@ -2394,6 +2436,7 @@ namespace ClawMachine.UI
             HideOverlay(quitConfirmOverlay);
             HideOverlay(devModeOverlay);
             HideOverlay(devResetStatsConfirmOverlay);
+            HideOverlay(devSceneReloadConfirmOverlay);
             HideOverlay(devDbOverlay);
             HideOverlay(devDeleteParticipantConfirmOverlay);
             ClearPendingParticipantDelete();
@@ -2446,6 +2489,12 @@ namespace ClawMachine.UI
                     SetNavigationGroup(
                         NavGroup.DevStatsResetConfirm,
                         new Button[] { devResetStatsCancelBtn, devResetStatsConfirmBtn });
+                }
+                else if (overlay == devSceneReloadConfirmOverlay)
+                {
+                    SetNavigationGroup(
+                        NavGroup.DevSceneReloadConfirm,
+                        new Button[] { devSceneReloadCancelBtn, devSceneReloadConfirmBtn });
                 }
                 else if (overlay == devDeleteParticipantConfirmOverlay)
                 {
