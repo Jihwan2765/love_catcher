@@ -66,7 +66,7 @@ def main():
     )
     checks = [
         ("인증 없는 참가자 목록", root + "/Participants?pageSize=1", None, None, 403),
-        ("인증 없는 참가자 단일 조회", root + "/Participants/__booth_access_probe__", None, None, 403),
+        ("인증 없는 참가자 단일 조회", root + "/Participants/booth_access_probe_never_created", None, None, 403),
         (
             "인증 없는 참가자 쿼리",
             root + ":runQuery",
