@@ -1,6 +1,6 @@
 ## 2026-09-26 Firebase 운영 주의
 
-현재 변경은 **운영 빌드 전 테스트가 필요**합니다. 스태프 Firebase 이메일 로그인과 `boothStaff` 클레임, `FIREBASE_WEB_API_KEY`, `GameState/stats`의 실제 재고 6개 정수 필드가 필요합니다. `firestore.rules`와 인덱스는 저장소에 있지만 서버 배포 여부는 확인되지 않았습니다. 공개 규칙이 남아 있으면 참가자 데이터는 보호되지 않습니다.
+현재 변경은 **운영 빌드 전 테스트가 필요**합니다. 2026-09-27 운영 계정의 스태프 클레임과 게시된 `firestore.rules`로 익명 읽기 거부·스태프 읽기 허용을 확인했습니다. `FIREBASE_WEB_API_KEY`는 로컬 `.env`에만 있으며, `GameState/stats`의 실제 재고 입력과 실게임 쓰기·동시성·Windows 빌드 검증은 아직 필요합니다.
 
 로컬 REST 요청 모의 검사는 `dotnet run --project Tests/FirestoreRest/FirestoreRestChecks.csproj`로 실행합니다. 이 검사는 실제 Firebase 접속이나 Windows 빌드 검증을 대신하지 않습니다.
 
@@ -156,7 +156,7 @@ flowchart TD
 
 1. [Firebase 콘솔](https://console.firebase.google.com/)에 접속하여 새 프로젝트를 생성합니다.
 2. 좌측 메뉴에서 **빌드 > Firestore Database**를 선택하고 **데이터베이스 만들기**를 클릭합니다.
-3. 별도 테스트 프로젝트에서 `firestore.rules`와 `firestore.indexes.json`을 배포해 무인증·일반 계정 거부, 스태프 계정 허용을 검증한 뒤 운영 프로젝트에 배포합니다. 전체 공개 규칙은 사용하지 않습니다.
+3. 운영 프로젝트에는 `firestore.rules`를 게시했고 익명 읽기 거부·스태프 읽기 허용을 확인했습니다. 별도 테스트 프로젝트에서 무인증·일반 계정의 쓰기 거부와 게임의 동시 쓰기를 추가로 검증합니다. 전체 공개 규칙은 사용하지 않습니다.
 4. Firebase Authentication 이메일/비밀번호 제공자와 스태프 계정을 설정하고, `admin_tools/grant_staff_claim.py`로 `boothStaff` 클레임을 부여합니다. 재고 수정 담당자에게는 `boothAdmin`도 부여합니다. 계정 비밀번호와 서비스 계정 키는 저장소에 올리지 않습니다.
 5. 같은 Firebase 프로젝트의 Web API Key를 `FIREBASE_WEB_API_KEY` 또는 `Assets/Resources/FirebaseConfig.json`에 입력합니다. 기존 참가자가 있으면 `admin_tools/migrate_participant_keys.py`로 인덱스를 먼저 준비합니다.
 6. `GameState/stats`에 `totalDolls`, `totalLegendaryDolls`, `totalRevenue`, `totalRegistrations`, `totalPlays`, `totalSuccesses`를 정수로 만들고 실제 초기 재고를 입력합니다. 이 문서가 없으면 지급하지 않습니다.
