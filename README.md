@@ -2,6 +2,8 @@
 
 현재 변경은 **운영 빌드 전 테스트가 필요**합니다. 2026-09-27 운영 계정의 스태프 클레임과 게시된 `firestore.rules`로 익명 읽기 거부·스태프 읽기 허용을 확인했습니다. `FIREBASE_WEB_API_KEY`는 로컬 `.env`에만 있으며, `GameState/stats`의 실제 재고 입력과 실게임 쓰기·동시성·Windows 빌드 검증은 아직 필요합니다.
 
+Windows 빌드 시 프로젝트 루트의 Git 제외 `.env`에서 Firebase 프로젝트 ID와 Web API Key, 설정된 경우 기존 결제 안내 문구를 실행 파일 옆 `.env`로 자동 배치합니다. 필수 설정 누락·프로젝트 불일치 시 빌드를 중단합니다. `.exe`, `_Data` 폴더, 생성된 `.env`를 함께 배포하고 스태프 비밀번호는 파일에 넣지 않습니다.
+
 로컬 REST 요청 모의 검사는 `dotnet run --project Tests/FirestoreRest/FirestoreRestChecks.csproj`로 실행합니다. 이 검사는 실제 Firebase 접속이나 Windows 빌드 검증을 대신하지 않습니다.
 
 인형뽑기는 인스타 ID를 필수로 확인하며 기존 참가자를 재사용합니다. 지급 확정이 불분명하면 하위 상품으로 자동 변경하지 않고 운영진이 처리합니다. 일반·레전드 재고는 사격·리듬과 공유합니다. 기존 데이터가 있다면 `admin_tools/migrate_participant_keys.py`로 정규화 인덱스와 이미 뽑힌 프로필 잠금을 먼저 준비하세요. 결제 금액과 코인 묶음은 변경하지 않았습니다. Windows 빌드와 별도 Firebase 프로젝트에서 네트워크 오류, 버튼 연타, 중복 참가자, 마지막 재고 동시 지급을 반드시 검증하세요.
