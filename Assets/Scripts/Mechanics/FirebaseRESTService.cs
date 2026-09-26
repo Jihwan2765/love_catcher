@@ -16,6 +16,8 @@ namespace ClawMachine.Mechanics
         [Serializable] private class AggregateValue { public CountFields aggregateFields; }
         [Serializable] private class AggregateItem { public AggregateValue result; }
         [Serializable] private class AggregateItems { public AggregateItem[] items; }
+        [Serializable] private class ParticipantKeyFields { public FirestoreStringField participantKey; }
+        [Serializable] private class ParticipantKeyDocument { public ParticipantKeyFields fields; }
         private static FirebaseRESTService instance;
         public static FirebaseRESTService Instance
         {
@@ -59,6 +61,7 @@ namespace ClawMachine.Mechanics
         private IEnumerator SendAuthorized(UnityWebRequest request)
         {
             string token = null;
+            if (BoothStaffAuth.Instance == null) yield break;
             yield return BoothStaffAuth.Instance.EnsureIdToken(value => token = value);
             if (string.IsNullOrEmpty(token))
             {
@@ -144,7 +147,14 @@ namespace ClawMachine.Mechanics
                 using (var check = UnityWebRequest.Get(root + "/ParticipantKeys/" + key))
                 {
                     yield return SendAuthorized(check);
-                    if (check.responseCode == 200) { callback?.Invoke(true); yield break; }
+                    if (check.responseCode == 200)
+                    {
+                        bool indexedParticipantValid = false;
+                        yield return ValidateParticipantKey(check.downloadHandler.text, handle,
+                            valid => indexedParticipantValid = valid);
+                        callback?.Invoke(indexedParticipantValid);
+                        yield break;
+                    }
                     if (check.responseCode != 404) { callback?.Invoke(false); yield break; }
                 }
                 string payload = "{\"writes\":[{\"update\":{\"name\":\"" + prefix + "ParticipantKeys/" + key +
@@ -189,7 +199,13 @@ namespace ClawMachine.Mechanics
             using (var indexed = UnityWebRequest.Get(indexUrl))
             {
                 yield return SendAuthorized(indexed);
-                if (indexed.responseCode == 200) { callback?.Invoke(true); yield break; }
+                if (indexed.responseCode == 200)
+                {
+                    bool valid = false;
+                    yield return ValidateParticipantKey(indexed.downloadHandler.text, instaId, result => valid = result);
+                    callback?.Invoke(valid ? true : (bool?)null);
+                    yield break;
+                }
                 if (indexed.responseCode != 404) { callback?.Invoke(null); yield break; }
             }
 
@@ -419,6 +435,30 @@ namespace ClawMachine.Mechanics
                 }
             }
             callback?.Invoke(counts[0], counts[1]);
+        }
+
+        private IEnumerator ValidateParticipantKey(string indexJson, string handle, Action<bool> callback)
+        {
+            ParticipantKeyDocument indexed;
+            try { indexed = JsonUtility.FromJson<ParticipantKeyDocument>(indexJson); }
+            catch (Exception) { callback?.Invoke(false); yield break; }
+            string participantKey = indexed?.fields?.participantKey?.stringValue;
+            if (string.IsNullOrWhiteSpace(participantKey) || participantKey.Contains("/"))
+            { callback?.Invoke(false); yield break; }
+
+            string root = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents";
+            using (var person = UnityWebRequest.Get(root + "/Participants/" + Uri.EscapeDataString(participantKey)))
+            {
+                yield return SendAuthorized(person);
+                if (person.responseCode != 200) { callback?.Invoke(false); yield break; }
+                try
+                {
+                    var doc = JsonUtility.FromJson<FirestoreDocument>(person.downloadHandler.text);
+                    string stored = (doc?.fields?.insta?.stringValue ?? "").Trim().TrimStart('@').ToLowerInvariant();
+                    callback?.Invoke(stored == handle);
+                }
+                catch (Exception) { callback?.Invoke(false); }
+            }
         }
 
         /// <summary>

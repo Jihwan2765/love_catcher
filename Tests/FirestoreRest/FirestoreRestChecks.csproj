@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>CS0649</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="UnityStubs.cs" />
+    <Compile Include="LoveStubs.cs" />
+    <Compile Include="Program.cs" />
+    <Compile Include="../../Assets/Scripts/Mechanics/FirebaseRESTService.cs" />
+    <Compile Include="../../Assets/Scripts/Mechanics/BoothStaffAuth.cs" />
+  </ItemGroup>
+</Project>

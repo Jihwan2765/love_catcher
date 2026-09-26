@@ -2,6 +2,8 @@
 
 현재 변경은 **운영 빌드 전 테스트가 필요**합니다. 스태프 Firebase 이메일 로그인과 `boothStaff` 클레임, `FIREBASE_WEB_API_KEY`, `GameState/stats`의 실제 재고 6개 정수 필드가 필요합니다. `firestore.rules`와 인덱스는 저장소에 있지만 서버 배포 여부는 확인되지 않았습니다. 공개 규칙이 남아 있으면 참가자 데이터는 보호되지 않습니다.
 
+로컬 REST 요청 모의 검사는 `dotnet run --project Tests/FirestoreRest/FirestoreRestChecks.csproj`로 실행합니다. 이 검사는 실제 Firebase 접속이나 Windows 빌드 검증을 대신하지 않습니다.
+
 인형뽑기는 인스타 ID를 필수로 확인하며 기존 참가자를 재사용합니다. 지급 확정이 불분명하면 하위 상품으로 자동 변경하지 않고 운영진이 처리합니다. 일반·레전드 재고는 사격·리듬과 공유합니다. 기존 데이터가 있다면 `admin_tools/migrate_participant_keys.py`로 정규화 인덱스와 이미 뽑힌 프로필 잠금을 먼저 준비하세요. 결제 금액과 코인 묶음은 변경하지 않았습니다. Windows 빌드와 별도 Firebase 프로젝트에서 네트워크 오류, 버튼 연타, 중복 참가자, 마지막 재고 동시 지급을 반드시 검증하세요.
 
 

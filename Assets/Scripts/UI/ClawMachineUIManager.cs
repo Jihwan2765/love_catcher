@@ -82,6 +82,11 @@ namespace ClawMachine.UI
 
         private bool BeginPlayTransition()
         {
+            if (BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAuthenticated)
+            {
+                ShowRegistrationError("스태프가 Firebase에 로그인한 뒤 시작해 주세요.");
+                return false;
+            }
             if (Time.unscaledTime - lastPlayStartAt < 0.75f) return false;
             lastPlayStartAt = Time.unscaledTime;
             return true;
