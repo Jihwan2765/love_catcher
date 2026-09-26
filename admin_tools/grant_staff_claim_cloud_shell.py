@@ -31,6 +31,8 @@ def post(project_id, path, token, payload):
         headers={
             "Authorization": "Bearer " + token,
             "Content-Type": "application/json",
+            # 사용자 OAuth 토큰을 쓰는 REST 호출은 할당량 프로젝트를 명시해야 한다.
+            "x-goog-user-project": project_id,
         },
         method="POST",
     )
