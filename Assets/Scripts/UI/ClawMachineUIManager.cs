@@ -2718,24 +2718,29 @@ namespace ClawMachine.UI
             devResetStatsBtn.text = "초기화 진행 중...";
             devResetStatsBtn.SetEnabled(false);
 
-            var zeroStats = new ClawMachine.Mechanics.GameStatsData
-            {
-                totalRevenue = 0,
-                totalPlays = 0,
-                totalSuccesses = 0,
-                totalDolls = (ClawMachine.Mechanics.GameFlowManager.Instance != null) ? ClawMachine.Mechanics.GameFlowManager.Instance.totalDolls : 100,
-                totalLegendaryDolls = (ClawMachine.Mechanics.GameFlowManager.Instance != null) ? ClawMachine.Mechanics.GameFlowManager.Instance.totalLegendaryDolls : 10
-            };
-
-            StartCoroutine(firebase.UpdateGameStats(
-                zeroStats,
-                new System.Collections.Generic.List<string> { "totalRevenue", "totalPlays", "totalSuccesses" },
-                success => {
-                    devResetStatsBtn.text = success ? "통계 초기화 완료!" : "통계 초기화 실패";
+            StartCoroutine(firebase.GetGameStats(stats => {
+                if (stats.totalDolls < 0 || stats.totalLegendaryDolls < 0 ||
+                    stats.totalRevenue < 0 || stats.totalRegistrations < 0 ||
+                    stats.totalPlays < 0 || stats.totalSuccesses < 0)
+                {
+                    devResetStatsBtn.text = "통계 조회 실패";
                     devResetStatsBtn.SetEnabled(true);
-                    RefreshDevModeStats();
                     Invoke(nameof(RestoreDevResetStatsBtnText), 2f);
-                }));
+                    return;
+                }
+                stats.totalRevenue = 0;
+                stats.totalPlays = 0;
+                stats.totalSuccesses = 0;
+                StartCoroutine(firebase.UpdateGameStats(
+                    stats,
+                    new System.Collections.Generic.List<string> { "totalRevenue", "totalPlays", "totalSuccesses" },
+                    success => {
+                        devResetStatsBtn.text = success ? "통계 초기화 완료!" : "통계 초기화 실패";
+                        devResetStatsBtn.SetEnabled(true);
+                        RefreshDevModeStats();
+                        Invoke(nameof(RestoreDevResetStatsBtnText), 2f);
+                    }));
+            }));
         }
 
         private void RefreshDevModeStats()

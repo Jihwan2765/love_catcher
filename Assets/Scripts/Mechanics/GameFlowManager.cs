@@ -71,16 +71,18 @@ namespace ClawMachine.Mechanics
 
         [Header("Game Statistics")]
         public int totalInstaCards = 20;
-        public int totalLegendaryDolls = 10;
-        public int totalDolls = 100;
+        public int totalLegendaryDolls = -1;
+        public int totalDolls = -1;
         public int totalAttempts = 0;
-        public int oppositeGenderCount = 20;
+        public int oppositeGenderCount = -1;
 
         // Session variables
         private float timeRemaining;
         private int sessionAttempts = 0;
         private bool isGameActive = false;
         private bool sessionStarting;
+        private bool wasStaffAuthenticated;
+        private int inventoryLoadGeneration;
         private bool isDollScoredThisAttempt = false;
         private List<GameObject> scoredDollsThisAttempt = new List<GameObject>();
 
@@ -110,6 +112,11 @@ namespace ClawMachine.Mechanics
                 return;
             }
             Instance = this;
+
+            // Unity 씬에 직렬화된 예전 100/10 값도 운영 재고로 표시하지 않습니다.
+            totalDolls = -1;
+            totalLegendaryDolls = -1;
+            oppositeGenderCount = -1;
 
             // C# 필드 초기값보다 Unity 씬에 직렬화된 과거 값이 우선 적용될 수 있습니다.
             // 매 실행 시 승인된 기본값으로 시작하고, 이후 개발자 모드 변경은 현재 실행 동안 즉시 적용합니다.
@@ -164,26 +171,32 @@ namespace ClawMachine.Mechanics
 
             GoalBoxTrigger.OnDollScored += HandleDollScored;
 
-            // 저장된 남은 인형 개수 불러오기 (Firebase)
-            if (firebaseService != null && !string.IsNullOrEmpty(firebaseService.firebaseProjectId))
-            {
-                StartCoroutine(firebaseService.GetTotalDolls((count) => {
-                    totalDolls = count;
-                    UpdateStatsUI();
-                }));
-                StartCoroutine(firebaseService.GetTotalLegendaryDolls((count) => {
-                    totalLegendaryDolls = count;
-                    UpdateStatsUI();
-                }));
-            }
-            else
-            {
-                UpdateStatsUI();
-            }
+            UpdateStatsUI();
+            // 로그인 전에는 읽기가 거부될 수 있으므로 첫 로그인 시 새로고침합니다.
             
             // 처음에는 조작 금지
             if (clawController != null) clawController.enabled = false;
             IsInitialized = true;
+        }
+
+        private IEnumerator RefreshInventory()
+        {
+            int generation = ++inventoryLoadGeneration;
+            if (firebaseService == null || string.IsNullOrEmpty(firebaseService.firebaseProjectId))
+            {
+                totalDolls = -1;
+                totalLegendaryDolls = -1;
+                UpdateStatsUI();
+                yield break;
+            }
+
+            GameStatsData stats = default;
+            bool received = false;
+            yield return firebaseService.GetGameStats(value => { stats = value; received = true; });
+            if (generation != inventoryLoadGeneration) yield break;
+            totalDolls = received ? stats.totalDolls : -1;
+            totalLegendaryDolls = received ? stats.totalLegendaryDolls : -1;
+            UpdateStatsUI();
         }
 
         private void OnDestroy()
@@ -201,6 +214,19 @@ namespace ClawMachine.Mechanics
 
         private void Update()
         {
+            bool staffAuthenticated = BoothStaffAuth.Instance != null && BoothStaffAuth.Instance.IsAuthenticated;
+            if (staffAuthenticated != wasStaffAuthenticated)
+            {
+                wasStaffAuthenticated = staffAuthenticated;
+                if (staffAuthenticated) StartCoroutine(RefreshInventory());
+                else
+                {
+                    ++inventoryLoadGeneration;
+                    totalDolls = -1;
+                    totalLegendaryDolls = -1;
+                    UpdateStatsUI();
+                }
+            }
             if (!isGameActive) return;
 
             // 타이머 카운트다운
@@ -388,8 +414,7 @@ namespace ClawMachine.Mechanics
                 ClawMachineUIManager.Instance.ShowRegistrationError("DB 연결을 확인해 주세요. 보상 지급을 보류합니다.");
                 yield break;
             }
-            yield return firebaseService.GetTotalDolls(count => totalDolls = count);
-            yield return firebaseService.GetTotalLegendaryDolls(count => totalLegendaryDolls = count);
+            yield return RefreshInventory();
             if (totalDolls < 0 || totalLegendaryDolls < 0 ||
                 (totalDolls == 0 && totalLegendaryDolls == 0))
             {
@@ -444,7 +469,9 @@ namespace ClawMachine.Mechanics
                                         !string.IsNullOrWhiteSpace(matchResult.documentId);
                 if (!canGiveInstagram)
                 {
-                    ClawMachineUIManager.Instance.ShowRegistrationError("매칭 대상 확인이 필요합니다. 보상을 보류하고 운영진에게 알려 주세요.");
+                    ClawMachineUIManager.Instance.ShowRegistrationError(matchResult.querySucceeded
+                        ? "뽑을 수 있는 이성 인스타 ID가 없습니다. 보상을 보류하고 운영진에게 알려 주세요."
+                        : "매칭 대상 조회에 실패했습니다. 연결을 확인하고 운영진에게 알려 주세요.");
                     yield break;
                 }
                 else
@@ -627,6 +654,7 @@ namespace ClawMachine.Mechanics
             string statsGender = ClawMachineUIManager.Instance.registeredGender;
             bool hasInstagram = !string.IsNullOrWhiteSpace(ClawMachineUIManager.Instance.registeredInsta);
             float winChance = 0f;
+            float winChanceWithoutMatch = 0f;
             if (TryGetGenderProbabilities(
                     statsGender,
                     hasInstagram,
@@ -641,12 +669,17 @@ namespace ClawMachine.Mechanics
                 if (total > 0f)
                 {
                     winChance = (legendary + doll + (hasInstagram ? instagram : 0f)) / total * 100f;
+                    winChanceWithoutMatch = (legendary + doll) / total * 100f;
                 }
             }
 
-            if (firebaseService != null && !string.IsNullOrEmpty(firebaseService.firebaseProjectId))
+            if (firebaseService != null && !string.IsNullOrEmpty(firebaseService.firebaseProjectId) &&
+                BoothStaffAuth.Instance != null && BoothStaffAuth.Instance.IsAuthenticated)
             {
+                int generation = inventoryLoadGeneration;
                 StartCoroutine(firebaseService.GetUnpickedCounts((maleCount, femaleCount) => {
+                    if (generation != inventoryLoadGeneration || ClawMachineUIManager.Instance == null ||
+                        BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAuthenticated) return;
                     if (maleCount != -1 && femaleCount != -1)
                     {
                         ClawMachineUIManager.Instance.UpdateRegisterPoolCount(maleCount, femaleCount);
@@ -658,7 +691,8 @@ namespace ClawMachine.Mechanics
                         int oppositeCount = (currentGender == "남") ? femaleCount : maleCount;
                         oppositeGenderCount = oppositeCount; // 캐싱
                         
-                        ClawMachineUIManager.Instance.SetStats(oppositeCount, totalDolls, totalLegendaryDolls, winChance);
+                        ClawMachineUIManager.Instance.SetStats(oppositeCount, totalDolls, totalLegendaryDolls,
+                            oppositeCount > 0 ? winChance : winChanceWithoutMatch);
                     }
                     else
                     {

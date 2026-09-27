@@ -253,15 +253,17 @@ namespace ClawMachine.Mechanics
                     try
                     {
                         RunQueryResponseList responseList = JsonUtility.FromJson<RunQueryResponseList>(wrappedJson);
-                        if (responseList.items != null)
+                        if (responseList?.items == null)
                         {
-                            foreach (var item in responseList.items)
+                            callback?.Invoke(null);
+                            yield break;
+                        }
+                        foreach (var item in responseList.items)
+                        {
+                            if (item.document != null && item.document.fields != null && !string.IsNullOrEmpty(item.document.name))
                             {
-                                if (item.document != null && item.document.fields != null && !string.IsNullOrEmpty(item.document.name))
-                                {
-                                    callback?.Invoke(true); // Exists
-                                    yield break;
-                                }
+                                callback?.Invoke(true); // Exists
+                                yield break;
                             }
                         }
                     }
@@ -339,26 +341,28 @@ namespace ClawMachine.Mechanics
                     try
                     {
                         RunQueryResponseList responseList = JsonUtility.FromJson<RunQueryResponseList>(wrappedJson);
-                        
+                        if (responseList?.items == null)
+                        {
+                            callback?.Invoke(new MatchedProfileResponse { success = false });
+                            yield break;
+                        }
+
                         // 유효한 매칭 대상(필드가 있는 문서) 필터링
                         List<RunQueryResponseItem> validItems = new List<RunQueryResponseItem>();
-                        if (responseList.items != null)
+                        foreach (var item in responseList.items)
                         {
-                            foreach (var item in responseList.items)
+                            if (item.document != null && item.document.fields != null && !string.IsNullOrEmpty(item.document.name))
                             {
-                                if (item.document != null && item.document.fields != null && !string.IsNullOrEmpty(item.document.name))
+                                // 이름만 있고 인스타 아이디가 없는 데이터는 매칭(보상) 후보에서 완전히 제외
+                                string instaVal = "";
+                                if (item.document.fields.insta != null && !string.IsNullOrEmpty(item.document.fields.insta.stringValue))
                                 {
-                                    // 이름만 있고 인스타 아이디가 없는 데이터는 매칭(보상) 후보에서 완전히 제외
-                                    string instaVal = "";
-                                    if (item.document.fields.insta != null && !string.IsNullOrEmpty(item.document.fields.insta.stringValue))
-                                    {
-                                        instaVal = item.document.fields.insta.stringValue.Trim();
-                                    }
+                                    instaVal = item.document.fields.insta.stringValue.Trim();
+                                }
 
-                                    if (!string.IsNullOrEmpty(instaVal))
-                                    {
-                                        validItems.Add(item);
-                                    }
+                                if (!string.IsNullOrEmpty(instaVal))
+                                {
+                                    validItems.Add(item);
                                 }
                             }
                         }
@@ -375,6 +379,7 @@ namespace ClawMachine.Mechanics
                             MatchedProfileResponse match = new MatchedProfileResponse
                             {
                                 success = true,
+                                querySucceeded = true,
                                 documentId = docId,
                                 name = chosen.document.fields.name?.stringValue ?? "익명",
                                 gender = chosen.document.fields.gender?.stringValue ?? oppositeGender,
@@ -388,18 +393,18 @@ namespace ClawMachine.Mechanics
                         else
                         {
                             Debug.LogWarning("[Firebase] 조건에 부합하는 매칭 대상이 없습니다.");
-                            callback?.Invoke(new MatchedProfileResponse { success = false });
+                            callback?.Invoke(new MatchedProfileResponse { success = false, querySucceeded = true });
                         }
                     }
                     catch (Exception ex)
                     {
-                        Debug.LogError($"[Firebase] 응답 파싱 중 예외 발생: {ex.Message}\n원본: {rawJson}");
+                        Debug.LogError($"[Firebase] 매칭 응답 파싱 실패: {ex.Message}");
                         callback?.Invoke(new MatchedProfileResponse { success = false });
                     }
                 }
                 else
                 {
-                    Debug.LogError($"[Firebase] 매칭 쿼리 실패: {request.error}\n응답: {request.downloadHandler.text}");
+                    Debug.LogError($"[Firebase] 매칭 쿼리 실패: HTTP {request.responseCode}, {request.error}");
                     callback?.Invoke(new MatchedProfileResponse { success = false });
                 }
             }
@@ -1453,6 +1458,7 @@ namespace ClawMachine.Mechanics
     public struct MatchedProfileResponse
     {
         public bool success;
+        public bool querySucceeded;
         public string documentId;
         public string name;
         public string gender;

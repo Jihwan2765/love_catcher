@@ -56,7 +56,7 @@ typeof(BoothStaffAuth).GetField("idToken",BindingFlags.Instance|BindingFlags.Non
 Run(service.CheckInstaIdExists("candidate",exists=>{if(exists!=null)throw new Exception("unauthenticated lookup accepted");}));
 if(allRequests!=beforeUnauthenticatedLookup)throw new Exception("unauthenticated lookup sent a request");
 typeof(BoothStaffAuth).GetField("idToken",BindingFlags.Instance|BindingFlags.NonPublic).SetValue(auth,"x."+claims+".x");
-Run(service.ClaimPrize("round1",false,ok=>prize=ok)); Run(service.CheckInstaIdExists("fresh",exists=>{if(exists!=false)throw new Exception("bad duplicate check");})); Run(service.GetRandomMatch("여",match=>{if(match.success)throw new Exception("unexpected match");}));
+Run(service.ClaimPrize("round1",false,ok=>prize=ok)); Run(service.CheckInstaIdExists("fresh",exists=>{if(exists!=false)throw new Exception("bad duplicate check");})); Run(service.GetRandomMatch("여",match=>{if(match.success||!match.querySucceeded)throw new Exception("empty match pool was treated as query failure");}));
 Run(service.ClaimProfile("round2",new MatchedProfileResponse{documentId="candidate",insta="candidate"},ok=>profile=ok));
 Run(service.GetUnpickedCounts((male,female)=>{if(male!=2||female!=2)throw new Exception("bad aggregation: "+male+" "+female);}));
 Run(service.UpdateTotalDolls(3,ok=>inventory=ok));
@@ -84,4 +84,6 @@ service.IncrementPlayCountAndRevenue(0,"candidate",retryRound,
     (ok,_)=>{if(ok)throw new Exception("unconfirmed play was accepted");});
 service.IncrementPlayCountAndRevenue(0,"candidate",retryRound,
     (ok,_)=>{if(!ok)throw new Exception("same round retry failed");});
+UnityWebRequest.Responder=req=>req.url.EndsWith(":runQuery")?(503,""):normalResponder(req);
+Run(service.GetRandomMatch("여",match=>{if(match.success||match.querySucceeded)throw new Exception("failed match query was treated as empty pool");}));
 Console.WriteLine("Love index/registration/prize/profile/count/inventory/play+attempts JSON and replay checks passed");
