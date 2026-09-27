@@ -458,7 +458,11 @@ namespace ClawMachine.Mechanics
                 dollWeight = 0f;
             }
 
-            RewardType reward = RollReward(legendaryWeight, dollWeight, instagramWeight, candyWeight);
+            if (!TryRollReward(legendaryWeight, dollWeight, instagramWeight, candyWeight, out RewardType reward))
+            {
+                ClawMachineUIManager.Instance.ShowRegistrationError("보상 확률 합계가 0%입니다. 개발자 모드에서 확률을 확인해 주세요.");
+                yield break;
+            }
             MatchedProfileResponse matchResult = new MatchedProfileResponse { success = false };
 
             // 인스타 보상이 실제 당첨된 경우에만 Firebase에서 지급 가능한 상대를 조회합니다.
@@ -470,31 +474,48 @@ namespace ClawMachine.Mechanics
                     ClawMachineUIManager.Instance.ShowRegistrationError("DB 연결을 확인해 주세요. 보상 지급을 보류합니다.");
                     yield break;
                 }
-                yield return firebaseService.GetRandomMatch(oppositeGender, result => matchResult = result);
-                bool canGiveInstagram = matchResult.success &&
-                                        !string.IsNullOrWhiteSpace(matchResult.insta) &&
-                                        !string.IsNullOrWhiteSpace(matchResult.documentId);
-                if (!canGiveInstagram)
+                var rejectedCandidates = new HashSet<string>();
+                while (true)
                 {
-                    ClawMachineUIManager.Instance.ShowRegistrationError(matchResult.querySucceeded
-                        ? "뽑을 수 있는 이성 인스타 ID가 없습니다. 보상을 보류하고 운영진에게 알려 주세요."
-                        : "매칭 대상 조회에 실패했습니다. 연결을 확인하고 운영진에게 알려 주세요.");
-                    yield break;
-                }
-                else
-                {
-                    bool isLockSuccessful = false;
-                    yield return firebaseService.ClaimProfile(rewardRoundId, matchResult,
-                        updateSuccess => isLockSuccessful = updateSuccess);
-                    if (!isLockSuccessful)
+                    yield return firebaseService.GetRandomMatch(oppositeGender, result => matchResult = result,
+                        rejectedCandidates);
+                    bool canGiveInstagram = matchResult.success &&
+                                            !string.IsNullOrWhiteSpace(matchResult.insta) &&
+                                            !string.IsNullOrWhiteSpace(matchResult.documentId);
+                    if (!canGiveInstagram)
                     {
-                        ClawMachineUIManager.Instance.ShowRegistrationError("인스타 지급 확정이 불분명합니다. 운영진이 기록을 확인해 주세요. " + rewardRoundId);
+                        if (matchResult.querySucceeded)
+                        {
+                            // 모든 상대 프로필이 이미 지급됐다면 인스타 보상을 제외하고 다시 추첨합니다.
+                            if (!TryRollReward(legendaryWeight, dollWeight, 0f, candyWeight, out reward))
+                            {
+                                ClawMachineUIManager.Instance.ShowRegistrationError(
+                                    "지급 가능한 이성 인스타 참가자가 없고 대체 보상 확률도 0%입니다. 참가자 목록이나 개발자 모드의 보상 확률을 확인해 주세요.");
+                                yield break;
+                            }
+                            Debug.LogWarning("[보상 추첨] 지급 가능한 이성 인스타 ID가 없어 다른 보상으로 다시 추첨합니다.");
+                            break;
+                        }
+                        ClawMachineUIManager.Instance.ShowRegistrationError("매칭 대상 조회에 실패했습니다. 연결을 확인하고 운영진에게 알려 주세요.");
                         yield break;
                     }
-                    else
+
+                    ProfileClaimResult claimResult = ProfileClaimResult.Failed;
+                    yield return firebaseService.ClaimProfile(rewardRoundId, matchResult, null,
+                        result => claimResult = result);
+                    if (claimResult == ProfileClaimResult.Claimed)
                     {
                         Debug.Log($"[Firebase] {matchResult.name} 카드 실시간 잠금 완료");
+                        break;
                     }
+                    if (claimResult == ProfileClaimResult.CandidateUnavailable)
+                    {
+                        rejectedCandidates.Add(matchResult.documentId);
+                        continue;
+                    }
+
+                    ClawMachineUIManager.Instance.ShowRegistrationError("인스타 지급 확정이 불분명합니다. 운영진이 기록을 확인해 주세요. " + rewardRoundId);
+                    yield break;
                 }
             }
 
@@ -537,27 +558,35 @@ namespace ClawMachine.Mechanics
             UpdateStatsUI();
         }
 
-        private RewardType RollReward(float legendary, float doll, float instagram, float candy)
+        private bool TryRollReward(float legendary, float doll, float instagram, float candy, out RewardType reward)
         {
             legendary = Mathf.Max(0f, legendary);
             doll = Mathf.Max(0f, doll);
             instagram = Mathf.Max(0f, instagram);
             candy = Mathf.Max(0f, candy);
 
-            float total = legendary + doll + instagram + candy;
+            double total = (double)legendary + doll + instagram + candy;
             if (total <= 0f)
             {
-                Debug.LogError("[보상 추첨] 모든 보상 가중치가 0이므로 안전 보상인 사탕을 지급합니다.");
-                return RewardType.Candy;
+                reward = default;
+                Debug.LogError("[보상 추첨] 모든 보상 확률이 0이어서 추첨할 수 없습니다.");
+                return false;
             }
 
-            float roll = UnityEngine.Random.Range(0f, total);
-            if (roll < legendary) return RewardType.Legendary;
-            roll -= legendary;
-            if (roll < doll) return RewardType.Doll;
-            roll -= doll;
-            if (roll < instagram) return RewardType.Instagram;
-            return RewardType.Candy;
+            // float Random.Range는 상한도 반환할 수 있습니다. 정수 범위는 max 제외이므로
+            // 0% 보상이 경계값에서 선택되는 일을 막습니다.
+            double roll = UnityEngine.Random.Range(0, 1000000) / 1000000.0 * total;
+            if (roll < legendary) reward = RewardType.Legendary;
+            else if (roll < legendary + doll) reward = RewardType.Doll;
+            else if (roll < legendary + doll + instagram) reward = RewardType.Instagram;
+            else if (candy > 0f) reward = RewardType.Candy;
+            else
+            {
+                // 부동소수점 누적 경계에서도 0% 보상을 반환하지 않고 마지막 양수 가중치를 사용합니다.
+                reward = instagram > 0f ? RewardType.Instagram :
+                    doll > 0f ? RewardType.Doll : RewardType.Legendary;
+            }
+            return true;
         }
 
         /// <summary>

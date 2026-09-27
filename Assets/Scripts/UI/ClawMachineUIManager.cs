@@ -187,8 +187,6 @@ namespace ClawMachine.UI
         // Dev Mode Stats Manual Adjustments Fields
         private TextField devTotalRevenueInput;
         private Button devSaveRevenueBtn;
-        private TextField devTotalRegistrationsInput;
-        private Button devSaveRegistrationsBtn;
         private TextField devTotalPlaysInput;
         private Button devSavePlaysBtn;
         private TextField devTotalSuccessesInput;
@@ -440,8 +438,6 @@ namespace ClawMachine.UI
             // Bind Stat Adjustments Input Fields and Buttons
             devTotalRevenueInput = root.Q<TextField>("DevTotalRevenueInput");
             devSaveRevenueBtn = root.Q<Button>("DevSaveRevenueBtn");
-            devTotalRegistrationsInput = root.Q<TextField>("DevTotalRegistrationsInput");
-            devSaveRegistrationsBtn = root.Q<Button>("DevSaveRegistrationsBtn");
             devTotalPlaysInput = root.Q<TextField>("DevTotalPlaysInput");
             devSavePlaysBtn = root.Q<Button>("DevSavePlaysBtn");
             devTotalSuccessesInput = root.Q<TextField>("DevTotalSuccessesInput");
@@ -896,23 +892,6 @@ namespace ClawMachine.UI
                         StartCoroutine(SaveSingleStatCoroutine("totalRevenue", newVal, success => {
                             devSaveRevenueBtn.text = success ? "완료!" : "실패";
                             devSaveRevenueBtn.SetEnabled(true);
-                            RefreshDevModeStats(true);
-                        }));
-                    }
-                };
-            }
-
-            if (devSaveRegistrationsBtn != null)
-            {
-                devSaveRegistrationsBtn.clicked += () => {
-                    playBtnSound();
-                    if (devTotalRegistrationsInput != null && int.TryParse(devTotalRegistrationsInput.value, out int newVal))
-                    {
-                        devSaveRegistrationsBtn.text = "...";
-                        devSaveRegistrationsBtn.SetEnabled(false);
-                        StartCoroutine(SaveSingleStatCoroutine("totalRegistrations", newVal, success => {
-                            devSaveRegistrationsBtn.text = success ? "완료!" : "실패";
-                            devSaveRegistrationsBtn.SetEnabled(true);
                             RefreshDevModeStats(true);
                         }));
                     }
@@ -1549,25 +1528,50 @@ namespace ClawMachine.UI
                 return;
             }
 
-            if (ClawMachine.Mechanics.FirebaseRESTService.Instance == null)
+            if (!ClawMachine.Mechanics.FirebaseRESTService.TryNormalizeInstaId(insta, out _))
             {
-                ShowDevAddStatus("⚠ Firebase 연결 없음", new Color(1f, 0.4f, 0.2f));
+                ShowDevAddStatus("⚠ 인스타 ID는 영문, 숫자, 마침표, 밑줄로 30자 이내로 입력해 주세요.",
+                    new Color(1f, 0.4f, 0.2f));
+                return;
+            }
+
+            if (BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAdmin)
+            {
+                ShowDevAddStatus("⚠ 관리자 로그인이 필요합니다.", new Color(1f, 0.4f, 0.2f));
+                return;
+            }
+
+            if (ClawMachine.Mechanics.FirebaseRESTService.Instance == null ||
+                string.IsNullOrWhiteSpace(ClawMachine.Mechanics.FirebaseRESTService.Instance.firebaseProjectId))
+            {
+                ShowDevAddStatus("⚠ Firebase 프로젝트 설정을 확인해 주세요.", new Color(1f, 0.4f, 0.2f));
                 return;
             }
 
             devAddSubmitBtn.SetEnabled(false);
             devAddSubmitBtn.text = "...";
 
+            string gender = devAddSelectedGender;
             StartCoroutine(ClawMachine.Mechanics.FirebaseRESTService.Instance.RegisterPlayer(
-                name, insta, bio, devAddSelectedGender, 0, success =>
+                name, insta, bio, gender, 0, null, true, result =>
                 {
-                    if (success)
+                    if (result == ClawMachine.Mechanics.ParticipantRegistrationResult.Created)
                     {
-                        ShowDevAddStatus($"✅ '{name}' ({devAddSelectedGender}) 등록 완료!", new Color(0f, 1f, 0.5f));
+                        ShowDevAddStatus($"✅ '{name}' ({gender}) 등록 완료!", new Color(0f, 1f, 0.5f));
                         devAddName.value = "";
                         devAddInsta.value = "";
-                        devAddBio.value = "";
+                        if (devAddBio != null) devAddBio.value = "";
                         RefreshDbView(); // 목록 갱신
+                    }
+                    else if (result == ClawMachine.Mechanics.ParticipantRegistrationResult.AlreadyRegistered)
+                    {
+                        ShowDevAddStatus("⚠ 이미 등록된 인스타 아이디입니다. 목록에서 기존 참가자를 확인해 주세요.",
+                            new Color(1f, 0.7f, 0.2f));
+                    }
+                    else if (result == ClawMachine.Mechanics.ParticipantRegistrationResult.IndexConflict)
+                    {
+                        ShowDevAddStatus("❌ 참가자 인덱스가 기존 문서와 충돌합니다. 운영 데이터 확인이 필요합니다.",
+                            new Color(1f, 0.3f, 0.3f));
                     }
                     else
                     {
@@ -1684,14 +1688,18 @@ namespace ClawMachine.UI
                     newData.name == data.name && newData.insta == data.insta &&
                     newData.gender == data.gender && newData.bio == data.bio;
                 var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
-                Action<bool> onSaved = success => {
-                    saveBtn.text = success ? "완료!" : "실패";
+                Action<ClawMachine.Mechanics.ParticipantUpdateResult> onSaved = result => {
+                    saveBtn.text = result == ClawMachine.Mechanics.ParticipantUpdateResult.Saved ? "완료!" :
+                        result == ClawMachine.Mechanics.ParticipantUpdateResult.ProfileClaimLocked ? "잠금됨" : "실패";
                     saveBtn.SetEnabled(true);
-                    if (success) data = newData;
+                    if (result == ClawMachine.Mechanics.ParticipantUpdateResult.Saved) data = newData;
+                    if (result == ClawMachine.Mechanics.ParticipantUpdateResult.ProfileClaimLocked)
+                        ShowDevAddStatus("⚠ 뽑힘 상태와 지급 잠금 기록이 충돌합니다. 지급 내역을 확인해 주세요.",
+                            new Color(1f, 0.7f, 0.2f));
                 };
                 StartCoroutine(onlyPickedChanged
-                    ? firebase.UpdatePickedStatus(newData.documentId, newData.isPicked, onSaved)
-                    : firebase.UpdateParticipantFullData(newData, onSaved));
+                    ? firebase.UpdatePickedStatus(newData.documentId, newData.isPicked, null, onSaved)
+                    : firebase.UpdateParticipantFullData(newData, null, onSaved));
             };
 
             deleteBtn.clicked += () => {
@@ -2849,34 +2857,51 @@ namespace ClawMachine.UI
             int generation = ++devStatsRefreshGeneration;
             devStatsRefreshInFlight = true;
             nextDevStatsRefreshAt = Time.unscaledTime + DevStatsRefreshIntervalSeconds;
-            StartCoroutine(firebase.GetGameStats(stats => {
-                if (generation != devStatsRefreshGeneration) return;
-                devStatsRefreshInFlight = false;
-                nextDevStatsRefreshAt = Time.unscaledTime + DevStatsRefreshIntervalSeconds;
-                if (devModeOverlay == null || devModeOverlay.style.display != DisplayStyle.Flex ||
-                    BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAdmin) return;
-                if (stats.totalRegistrations < 0 || stats.totalPlays < 0 ||
-                    stats.totalSuccesses < 0 || stats.totalRevenue < 0)
-                {
-                    ShowDevStatsUnavailable();
-                    return;
-                }
+            StartCoroutine(LoadDevModeStats(firebase, generation));
+        }
 
-                if (devStatRegistrations != null) devStatRegistrations.text = $"누적 인스타 등록 건수: {stats.totalRegistrations}건";
-                if (devStatPlays != null) devStatPlays.text = $"총 플레이 횟수: {stats.totalPlays}회";
-                if (devStatSuccesses != null) devStatSuccesses.text = $"총 성공(뽑기) 횟수: {stats.totalSuccesses}회";
-                if (devStatRevenue != null) devStatRevenue.text = $"총 누적 수입: {stats.totalRevenue:N0}원";
+        private IEnumerator LoadDevModeStats(ClawMachine.Mechanics.FirebaseRESTService firebase, int generation)
+        {
+            ClawMachine.Mechanics.GameStatsData stats = default(ClawMachine.Mechanics.GameStatsData);
+            bool statsLoaded = false;
+            int? participantCount = null;
+            yield return firebase.GetGameStats(value => { stats = value; statsLoaded = true; });
+            yield return firebase.GetParticipantCount(value => participantCount = value);
 
-                if (devTotalRegistrationsInput != null && !IsUserTyping()) devTotalRegistrationsInput.value = stats.totalRegistrations.ToString();
-                if (devTotalRevenueInput != null && !IsUserTyping()) devTotalRevenueInput.value = stats.totalRevenue.ToString();
-                if (devTotalPlaysInput != null && !IsUserTyping()) devTotalPlaysInput.value = stats.totalPlays.ToString();
-                if (devTotalSuccessesInput != null && !IsUserTyping()) devTotalSuccessesInput.value = stats.totalSuccesses.ToString();
-            }));
+            if (generation != devStatsRefreshGeneration) yield break;
+            devStatsRefreshInFlight = false;
+            nextDevStatsRefreshAt = Time.unscaledTime + DevStatsRefreshIntervalSeconds;
+            if (devModeOverlay == null || devModeOverlay.style.display != DisplayStyle.Flex ||
+                BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAdmin) yield break;
+
+            if (devStatRegistrations != null)
+                devStatRegistrations.text = participantCount.HasValue
+                    ? $"현재 등록된 참가자 수: {participantCount.Value}명"
+                    : "현재 등록된 참가자 수: 확인 필요";
+
+            if (!statsLoaded || stats.totalPlays < 0 || stats.totalSuccesses < 0 || stats.totalRevenue < 0)
+            {
+                ShowDevGameStatsUnavailable();
+                yield break;
+            }
+
+            if (devStatPlays != null) devStatPlays.text = $"총 플레이 횟수: {stats.totalPlays}회";
+            if (devStatSuccesses != null) devStatSuccesses.text = $"총 성공(뽑기) 횟수: {stats.totalSuccesses}회";
+            if (devStatRevenue != null) devStatRevenue.text = $"총 누적 수입: {stats.totalRevenue:N0}원";
+
+            if (devTotalRevenueInput != null && !IsUserTyping()) devTotalRevenueInput.value = stats.totalRevenue.ToString();
+            if (devTotalPlaysInput != null && !IsUserTyping()) devTotalPlaysInput.value = stats.totalPlays.ToString();
+            if (devTotalSuccessesInput != null && !IsUserTyping()) devTotalSuccessesInput.value = stats.totalSuccesses.ToString();
         }
 
         private void ShowDevStatsUnavailable()
         {
-            if (devStatRegistrations != null) devStatRegistrations.text = "누적 인스타 등록 건수: 확인 필요";
+            if (devStatRegistrations != null) devStatRegistrations.text = "현재 등록된 참가자 수: 확인 필요";
+            ShowDevGameStatsUnavailable();
+        }
+
+        private void ShowDevGameStatsUnavailable()
+        {
             if (devStatPlays != null) devStatPlays.text = "총 플레이 횟수: 확인 필요";
             if (devStatSuccesses != null) devStatSuccesses.text = "총 성공(뽑기) 횟수: 확인 필요";
             if (devStatRevenue != null) devStatRevenue.text = "총 누적 수입: 확인 필요";
@@ -2913,7 +2938,6 @@ namespace ClawMachine.UI
             yield return new WaitUntil(() => fetchDone);
 
             if (fieldName == "totalRevenue") currentStats.totalRevenue = value;
-            else if (fieldName == "totalRegistrations") currentStats.totalRegistrations = value;
             else if (fieldName == "totalPlays") currentStats.totalPlays = value;
             else if (fieldName == "totalSuccesses") currentStats.totalSuccesses = value;
 

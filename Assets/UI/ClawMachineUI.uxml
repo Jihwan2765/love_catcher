@@ -125,7 +125,7 @@
                     </ui:VisualElement>
                     <ui:VisualElement class="form-field" style="margin-top: 16px; background-color: rgba(255, 215, 0, 0.05); padding: 12px; border-radius: 12px; border-width: 1px; border-color: rgba(255, 215, 0, 0.2);">
                         <ui:Label text="📈 행사 실시간 통계 📈" class="form-label" style="color: rgb(255, 215, 0); font-size: 16px; font-weight: bold; margin-bottom: 8px;" />
-                        <ui:Label name="DevStatRegistrations" text="등록된 총 인스타 ID 수: 0명" class="form-label" style="color: rgb(0, 238, 255); margin-bottom: 4px; font-size: 13px;" />
+                        <ui:Label name="DevStatRegistrations" text="현재 등록된 참가자 수: 확인 필요" class="form-label" style="color: rgb(0, 238, 255); margin-bottom: 4px; font-size: 13px;" />
                         <ui:Label name="DevStatPlays" text="총 플레이 횟수: 0회" class="form-label" style="color: rgb(255, 0, 128); margin-bottom: 4px; font-size: 13px;" />
                         <ui:Label name="DevStatSuccesses" text="총 성공(뽑기) 횟수: 0회" class="form-label" style="color: rgb(50, 255, 100); margin-bottom: 8px; font-size: 13px;" />
                         <ui:Label name="DevStatRevenue" text="총 누적 수입: 0원" class="form-label" style="color: rgb(255, 215, 0); font-size: 15px; font-weight: bold; margin-bottom: 0;" />
@@ -191,13 +191,6 @@
                             <ui:VisualElement style="flex-direction: row; align-items: center;">
                                 <ui:TextField name="DevTotalRevenueInput" value="0" class="input-field" style="width: 80px; margin-right: 8px;" />
                                 <ui:Button name="DevSaveRevenueBtn" text="저장" class="btn-primary" style="width: 60px; height: 32px; font-size: 12px; margin-bottom: 8px;" />
-                            </ui:VisualElement>
-                        </ui:VisualElement>
-                        <ui:VisualElement style="flex-direction: row; justify-content: space-between; align-items: center; margin-top: 8px;">
-                            <ui:Label text="등록된 총 ID 수:" class="form-label" style="margin-bottom: 0;" />
-                            <ui:VisualElement style="flex-direction: row; align-items: center;">
-                                <ui:TextField name="DevTotalRegistrationsInput" value="0" class="input-field" style="width: 80px; margin-right: 8px;" />
-                                <ui:Button name="DevSaveRegistrationsBtn" text="저장" class="btn-primary" style="width: 60px; height: 32px; font-size: 12px; margin-bottom: 8px;" />
                             </ui:VisualElement>
                         </ui:VisualElement>
                         <ui:VisualElement style="flex-direction: row; justify-content: space-between; align-items: center; margin-top: 8px;">

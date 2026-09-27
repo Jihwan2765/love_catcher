@@ -123,7 +123,7 @@ bool pickedSaved=false,participantSaved=false;
 Run(service.UpdatePickedStatus("candidate",true,ok=>pickedSaved=ok));
 using(var picked=JsonDocument.Parse(requests[^1]))
 {
- if(!pickedSaved || !patchUrl.EndsWith("?updateMask.fieldPaths=isPicked") ||
+ if(!pickedSaved || !patchUrl.Contains("?updateMask.fieldPaths=isPicked&currentDocument.updateTime=") ||
     picked.RootElement.GetProperty("fields").GetProperty("isPicked").GetProperty("booleanValue").GetBoolean()!=true)
   throw new Exception("picked status patch must update only isPicked");
 }
@@ -240,4 +240,190 @@ UnityWebRequest.Responder=req=>{
  return normalResponder(req);
 };
 Run(service.DeleteParticipant("lost_delete",ok=>{if(!ok)throw new Exception("lost delete response was not recovered");}));
-Console.WriteLine("Love registration/prize/profile/candy/count/inventory/play/delete JSON and replay checks passed");
+bool orphanIndexExists=true,orphanClaimExists=true;
+int orphanCleanupCommits=0,orphanRegistrationCommits=0;
+UnityWebRequest.Responder=req=>{
+ if(req.method=="GET"&&req.url.EndsWith("ParticipantKeys/insta_orphan"))
+  return orphanIndexExists?(200,"{\"updateTime\":\"2026-01-01T00:00:01Z\",\"fields\":{\"participantKey\":{\"stringValue\":\"insta_orphan\"}}}"):(404,"");
+ if(req.method=="GET"&&req.url.EndsWith("Participants/insta_orphan"))return(404,"");
+ if(req.method=="GET"&&req.url.EndsWith("ProfileClaims/insta_orphan"))
+  return orphanClaimExists?(200,"{\"updateTime\":\"2026-01-01T00:00:02Z\",\"fields\":{\"targetKey\":{\"stringValue\":\"insta_orphan\"}}}"):(404,"");
+ if(req.method=="GET"&&req.url.Contains("/Participants?pageSize=300"))
+  return(200,"{\"documents\":[{\"name\":\"projects/test-project/databases/(default)/documents/Participants/other\",\"fields\":{\"insta\":{\"stringValue\":\"other\"}}}]}");
+ if(req.method=="POST"&&req.url.EndsWith(":commit")&&
+    Encoding.UTF8.GetString(req.uploadHandler.bytes).Contains("ParticipantKeys/insta_orphan"))
+ {
+  using var json=JsonDocument.Parse(req.uploadHandler.bytes);
+  var writes=json.RootElement.GetProperty("writes");
+  if(writes[0].TryGetProperty("delete",out _))
+  {
+   if(writes.GetArrayLength()!=2 ||
+      !writes[1].GetProperty("delete").GetString().EndsWith("ProfileClaims/insta_orphan") ||
+      writes[0].GetProperty("currentDocument").GetProperty("updateTime").GetString()!="2026-01-01T00:00:01Z")
+    throw new Exception("orphan cleanup was not limited to the versioned index and claim");
+   orphanCleanupCommits++; orphanIndexExists=false; orphanClaimExists=false;
+  }
+  else
+  {
+   if(writes.GetArrayLength()!=3 ||
+      !writes[1].GetProperty("update").GetProperty("name").GetString()!.EndsWith("Participants/insta_orphan"))
+    throw new Exception("orphan replacement did not create the participant");
+   orphanRegistrationCommits++; orphanIndexExists=true;
+  }
+  return(200,"{}");
+ }
+ return normalResponder(req);
+};
+ParticipantRegistrationResult orphanResult=ParticipantRegistrationResult.Failed;
+Run(service.RegisterPlayer("Name","orphan","Bio","여",0,null,true,result=>orphanResult=result));
+if(orphanResult!=ParticipantRegistrationResult.Created || orphanCleanupCommits!=1 ||
+   orphanRegistrationCommits!=1 || orphanClaimExists)
+ throw new Exception("admin registration did not repair orphaned links before creating participant");
+int conflictingWrites=0;
+UnityWebRequest.Responder=req=>{
+ if(req.method=="GET"&&req.url.EndsWith("ParticipantKeys/insta_occupied"))
+  return(200,"{\"updateTime\":\"2026-01-01T00:00:01Z\",\"fields\":{\"participantKey\":{\"stringValue\":\"insta_occupied\"}}}");
+ if(req.method=="GET"&&req.url.EndsWith("Participants/insta_occupied"))
+  return(200,"{\"fields\":{\"insta\":{\"stringValue\":\"someone_else\"}}}");
+ if(req.method=="POST"&&req.url.EndsWith(":commit")){conflictingWrites++;return(200,"{}");}
+ return normalResponder(req);
+};
+ParticipantRegistrationResult conflictResult=ParticipantRegistrationResult.Failed;
+Run(service.RegisterPlayer("Name","occupied","Bio","여",0,null,true,result=>conflictResult=result));
+if(conflictResult!=ParticipantRegistrationResult.IndexConflict || conflictingWrites!=0)
+ throw new Exception("registration overwrote an index whose participant still exists");
+int shadowWrites=0;
+UnityWebRequest.Responder=req=>{
+ if(req.method=="GET"&&req.url.EndsWith("ParticipantKeys/insta_shadow"))
+  return(200,"{\"updateTime\":\"2026-01-01T00:00:01Z\",\"fields\":{\"participantKey\":{\"stringValue\":\"missing_shadow\"}}}");
+ if(req.method=="GET"&&req.url.EndsWith("Participants/missing_shadow"))return(404,"");
+ if(req.method=="GET"&&req.url.Contains("/Participants?pageSize=300"))
+  return(200,"{\"documents\":[{\"name\":\"projects/test-project/databases/(default)/documents/Participants/another\",\"fields\":{\"instaId\":{\"stringValue\":\"@shadow\"}}}]}");
+ if(req.method=="POST"&&req.url.EndsWith(":commit")){shadowWrites++;return(200,"{}");}
+ return normalResponder(req);
+};
+ParticipantRegistrationResult shadowResult=ParticipantRegistrationResult.Failed;
+Run(service.RegisterPlayer("Name","shadow","Bio","여",0,null,true,result=>shadowResult=result));
+if(shadowResult!=ParticipantRegistrationResult.IndexConflict || shadowWrites!=0)
+ throw new Exception("orphan repair ignored another participant with the same handle");
+int participantCountRequests=0;
+UnityWebRequest.Responder=req=>{
+ if(req.method=="POST"&&req.url.EndsWith(":runAggregationQuery"))
+ {
+  participantCountRequests++;
+  using var query=JsonDocument.Parse(req.uploadHandler.bytes);
+  var structured=query.RootElement.GetProperty("structuredAggregationQuery").GetProperty("structuredQuery");
+  if(structured.GetProperty("from")[0].GetProperty("collectionId").GetString()!="Participants" ||
+     structured.TryGetProperty("where",out _))
+   throw new Exception("participant count query did not count the entire collection");
+  return(200,"[{\"result\":{\"aggregateFields\":{\"count\":{\"integerValue\":\"3\"}}}}]");
+ }
+ return normalResponder(req);
+};
+int? participantCount=null;
+Run(service.GetParticipantCount(value=>participantCount=value));
+if(participantCount!=3 || participantCountRequests!=1)
+ throw new Exception("participant count did not use Firebase collection aggregation");
+UnityWebRequest.Responder=req=>{
+ if(req.method=="POST"&&req.url.EndsWith(":runAggregationQuery"))return(503,"");
+ return normalResponder(req);
+};
+participantCount=0;
+Run(service.GetParticipantCount(value=>participantCount=value));
+if(participantCount.HasValue)
+ throw new Exception("failed participant count returned a stale total");
+UnityWebRequest.Responder=req=>req.method=="POST"&&req.url.EndsWith(":runAggregationQuery")
+ ?(200,"[{\"result\":{\"aggregateFields\":{\"count\":{\"integerValue\":\"0\"}}}}]") : normalResponder(req);
+Run(service.GetParticipantCount(value=>participantCount=value));
+if(participantCount!=0)
+ throw new Exception("empty participant collection was not counted as zero");
+const string lockedRound="aabbccddeeff00112233445566778899";
+int profileResets=0;
+bool profileClaimExists=true;
+string profileClaimTarget="insta_hyuna.in.blanket";
+bool currentPicked=false;
+string pickedPatchUrl=null;
+string candidates="[{\"document\":{\"name\":\"projects/test-project/databases/(default)/documents/Participants/insta_hyuna.in.blanket\",\"fields\":{\"name\":{\"stringValue\":\"최현아\"},\"insta\":{\"stringValue\":\"hyuna.in.blanket\"}}}},{\"document\":{\"name\":\"projects/test-project/databases/(default)/documents/Participants/insta_ddong2\",\"fields\":{\"name\":{\"stringValue\":\"똥2\"},\"insta\":{\"stringValue\":\"ddong2\"}}}}]";
+UnityWebRequest.Responder=req=>{
+ if(req.method=="POST"&&req.url.EndsWith(":runQuery"))
+ {
+  using var query=JsonDocument.Parse(req.uploadHandler.bytes);
+  if(query.RootElement.GetProperty("structuredQuery").TryGetProperty("limit",out _))
+   throw new Exception("match query still truncates candidates before checking claims");
+  return(200,candidates);
+ }
+ if(req.method=="GET"&&req.url.EndsWith("ProfileClaims/insta_hyuna.in.blanket"))
+  return profileClaimExists?(200,"{\"updateTime\":\"2026-01-01T00:00:01Z\",\"fields\":{\"targetKey\":{\"stringValue\":\""+profileClaimTarget+"\"}}}"):(404,"");
+ if(req.method=="GET"&&req.url.EndsWith("ProfileClaims/insta_ddong2"))return(404,"");
+ if(req.method=="GET"&&req.url.EndsWith("Participants/insta_hyuna.in.blanket"))
+  return(200,"{\"updateTime\":\"2026-01-01T00:00:00Z\",\"fields\":{\"insta\":{\"stringValue\":\"hyuna.in.blanket\"},\"isPicked\":{\"booleanValue\":"+(currentPicked?"true":"false")+"}}}");
+ if(req.method=="PATCH"&&req.url.Contains("Participants/insta_hyuna.in.blanket"))
+ { pickedPatchUrl=req.url; return(200,"{}"); }
+ if(req.method=="POST"&&req.url.EndsWith(":commit"))
+ {
+  using var reset=JsonDocument.Parse(req.uploadHandler.bytes);
+  var writes=reset.RootElement.GetProperty("writes");
+  if(writes.GetArrayLength()!=2 ||
+     !writes[0].GetProperty("update").GetProperty("name").GetString()!.EndsWith("Participants/insta_hyuna.in.blanket") ||
+     !writes[1].GetProperty("delete").GetString()!.EndsWith("ProfileClaims/insta_hyuna.in.blanket") ||
+     writes[0].GetProperty("currentDocument").GetProperty("updateTime").GetString()!="2026-01-01T00:00:00Z" ||
+     writes[1].GetProperty("currentDocument").GetProperty("updateTime").GetString()!="2026-01-01T00:00:01Z")
+   throw new Exception("developer reset did not atomically update picked state and release the claim");
+  profileClaimExists=false;
+  currentPicked=false;
+  profileResets++;
+  return(200,"{}");
+ }
+ return normalResponder(req);
+};
+MatchedProfileResponse eligibleMatch=default;
+Run(service.GetRandomMatch("여",match=>eligibleMatch=match));
+if(eligibleMatch.documentId!="insta_ddong2")
+ throw new Exception("a profile with an existing claim was selected again");
+Run(service.GetRandomMatch("여",match=>eligibleMatch=match,new HashSet<string>{"insta_ddong2"}));
+if(eligibleMatch.success || !eligibleMatch.querySucceeded)
+ throw new Exception("locked profiles were reported as available after excluding the valid candidate");
+var lockedCandidate=new MatchedProfileResponse{documentId="insta_hyuna.in.blanket",insta="hyuna.in.blanket"};
+ProfileClaimResult claimResult=ProfileClaimResult.Failed;
+Run(service.ClaimProfile(lockedRound,lockedCandidate,null,result=>claimResult=result));
+if(claimResult!=ProfileClaimResult.CandidateUnavailable || profileResets!=0)
+ throw new Exception("a previously claimed profile was retried instead of rejected");
+ParticipantUpdateResult editResult=ParticipantUpdateResult.Failed;
+Run(service.UpdatePickedStatus("insta_hyuna.in.blanket",false,null,result=>editResult=result));
+if(editResult!=ParticipantUpdateResult.Saved || profileResets!=1 || profileClaimExists || pickedPatchUrl!=null)
+ throw new Exception("developer mode did not release the claim with isPicked");
+Run(service.GetRandomMatch("여",match=>eligibleMatch=match));
+if(eligibleMatch.documentId!="insta_hyuna.in.blanket")
+ throw new Exception("reset participant was not eligible for matching again");
+profileClaimExists=true;
+Run(service.UpdateParticipantFullData(new ParticipantData{documentId="insta_hyuna.in.blanket",name="최현아",insta="hyuna.in.blanket",gender="여",isPicked=false},null,result=>editResult=result));
+if(editResult!=ParticipantUpdateResult.ProfileClaimLocked || profileResets!=1)
+ throw new Exception("editing an already inconsistent participant silently released the claim");
+currentPicked=true;
+Run(service.UpdateParticipantFullData(new ParticipantData{documentId="insta_hyuna.in.blanket",name="최현아",insta="hyuna.in.blanket",gender="여",isPicked=false},null,result=>editResult=result));
+if(editResult!=ParticipantUpdateResult.Saved || profileResets!=2 || profileClaimExists || pickedPatchUrl!=null)
+ throw new Exception("full participant edit did not release the claim atomically");
+Run(service.UpdatePickedStatus("insta_hyuna.in.blanket",true,null,result=>editResult=result));
+if(editResult!=ParticipantUpdateResult.Saved ||
+   pickedPatchUrl==null || !pickedPatchUrl.Contains("currentDocument.updateTime="))
+ throw new Exception("developer mode could not mark a participant picked");
+profileClaimExists=true;
+profileClaimTarget="someone_else";
+Run(service.UpdatePickedStatus("insta_hyuna.in.blanket",false,null,result=>editResult=result));
+if(editResult!=ParticipantUpdateResult.ProfileClaimLocked || profileResets!=2)
+ throw new Exception("developer mode deleted another participant's claim");
+int concurrentClaimReads=0,concurrentClaimCommits=0;
+UnityWebRequest.Responder=req=>{
+ if(req.method=="GET"&&req.url.EndsWith("MatchResults/love_"+lockedRound))return(404,"");
+ if(req.method=="GET"&&req.url.EndsWith("Participants/candidate"))return(200,person);
+ if(req.method=="GET"&&req.url.EndsWith("ProfileClaims/insta_candidate"))
+  return ++concurrentClaimReads==1?(404,""):(200,"{\"fields\":{\"targetKey\":{\"stringValue\":\"candidate\"}}}");
+ if(req.method=="POST"&&req.url.EndsWith(":commit"))
+ { concurrentClaimCommits++; return(412,""); }
+ return normalResponder(req);
+};
+Run(service.ClaimProfile(lockedRound,new MatchedProfileResponse{documentId="candidate",insta="candidate"},
+ null,result=>claimResult=result));
+if(claimResult!=ProfileClaimResult.CandidateUnavailable || concurrentClaimCommits!=1 || concurrentClaimReads!=2)
+ throw new Exception("a concurrent profile claim was not classified for another candidate retry");
+Console.WriteLine("Love registration/prize/profile/candy/count/inventory/play/delete/orphan recovery/profile reset checks passed");

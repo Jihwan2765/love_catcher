@@ -8,6 +8,29 @@ using ClawMachine.Utils;
 
 namespace ClawMachine.Mechanics
 {
+    public enum ParticipantRegistrationResult
+    {
+        Created,
+        AlreadyRegistered,
+        InvalidInput,
+        IndexConflict,
+        Failed
+    }
+
+    public enum ProfileClaimResult
+    {
+        Claimed,
+        CandidateUnavailable,
+        Failed
+    }
+
+    public enum ParticipantUpdateResult
+    {
+        Saved,
+        ProfileClaimLocked,
+        Failed
+    }
+
     public class FirebaseRESTService : MonoBehaviour
     {
         [Serializable] private class ClaimFields { public FirestoreStringField stockField, targetKey, kind; }
@@ -151,10 +174,12 @@ namespace ClawMachine.Mechanics
         }
 
         /// <summary>참가자 정보를 Firestore에 신규 등록합니다.</summary>
-        public IEnumerator RegisterPlayer(string name, string insta, string bio, string gender, int attempts, Action<bool> callback)
+        public IEnumerator RegisterPlayer(string name, string insta, string bio, string gender, int attempts,
+            Action<bool> callback, bool repairOrphanedLinks = false,
+            Action<ParticipantRegistrationResult> resultCallback = null)
         {
             if (string.IsNullOrEmpty(firebaseProjectId) || !TryNormalizeInstaId(insta, out string handle))
-            { callback?.Invoke(false); yield break; }
+            { CompleteRegistration(ParticipantRegistrationResult.InvalidInput, callback, resultCallback); yield break; }
             string root = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents";
             string prefix = $"projects/{firebaseProjectId}/databases/(default)/documents/";
             string key = "insta_" + handle;
@@ -173,15 +198,26 @@ namespace ClawMachine.Mechanics
                         bool indexedParticipantValid = false;
                         yield return ValidateParticipantKey(check.downloadHandler.text, handle,
                             valid => indexedParticipantValid = valid);
-                        if (!indexedParticipantValid)
-                            Debug.LogError("[Firebase] 참가자 등록 실패: 기존 참가자 인덱스와 문서가 일치하지 않습니다.");
-                        callback?.Invoke(indexedParticipantValid);
+                        if (indexedParticipantValid)
+                        {
+                            CompleteRegistration(ParticipantRegistrationResult.AlreadyRegistered, callback, resultCallback);
+                            yield break;
+                        }
+                        if (repairOrphanedLinks && BoothStaffAuth.Instance != null && BoothStaffAuth.Instance.IsAdmin)
+                        {
+                            bool repaired = false;
+                            yield return RemoveOrphanedParticipantLinks(handle, check.downloadHandler.text,
+                                success => repaired = success);
+                            if (repaired) continue;
+                        }
+                        Debug.LogError("[Firebase] 참가자 등록 실패: 기존 참가자 인덱스와 문서가 일치하지 않습니다.");
+                        CompleteRegistration(ParticipantRegistrationResult.IndexConflict, callback, resultCallback);
                         yield break;
                     }
                     if (check.responseCode != 404)
                     {
                         LogRegistrationRequestFailure("인덱스 조회", check);
-                        callback?.Invoke(false);
+                        CompleteRegistration(ParticipantRegistrationResult.Failed, callback, resultCallback);
                         yield break;
                     }
                 }
@@ -200,13 +236,118 @@ namespace ClawMachine.Mechanics
                     commit.SetRequestHeader("Content-Type", "application/json");
                     yield return SendAuthorized(commit);
                     EndWriteOperation();
-                    if (commit.responseCode == 200) { callback?.Invoke(true); yield break; }
+                    if (commit.responseCode == 200)
+                    { CompleteRegistration(ParticipantRegistrationResult.Created, callback, resultCallback); yield break; }
                     LogRegistrationRequestFailure($"commit 시도 {attempt + 1}/5", commit);
                     if (commit.responseCode != 0 && commit.responseCode != 409 && commit.responseCode != 412 && commit.responseCode != 503)
-                    { callback?.Invoke(false); yield break; }
+                    { CompleteRegistration(ParticipantRegistrationResult.Failed, callback, resultCallback); yield break; }
                 }
             }
-            callback?.Invoke(false);
+            CompleteRegistration(ParticipantRegistrationResult.Failed, callback, resultCallback);
+        }
+
+        private static void CompleteRegistration(ParticipantRegistrationResult result, Action<bool> callback,
+            Action<ParticipantRegistrationResult> resultCallback)
+        {
+            resultCallback?.Invoke(result);
+            callback?.Invoke(result == ParticipantRegistrationResult.Created ||
+                result == ParticipantRegistrationResult.AlreadyRegistered);
+        }
+
+        /// <summary>관리자 직접 등록에서만, 참가자가 사라진 인덱스와 잠금을 버전 조건으로 정리합니다.</summary>
+        private IEnumerator RemoveOrphanedParticipantLinks(string handle, string indexJson, Action<bool> callback)
+        {
+            ParticipantKeyDocument index = null;
+            try { index = JsonUtility.FromJson<ParticipantKeyDocument>(indexJson); } catch (Exception) { }
+            string participantKey = index?.fields?.participantKey?.stringValue;
+            if (string.IsNullOrEmpty(index?.updateTime) ||
+                string.IsNullOrEmpty(participantKey) ||
+                !System.Text.RegularExpressions.Regex.IsMatch(participantKey, "^[a-zA-Z0-9._-]{1,1500}$"))
+            { callback?.Invoke(false); yield break; }
+
+            string root = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents";
+            string prefix = $"projects/{firebaseProjectId}/databases/(default)/documents/";
+            using (var person = UnityWebRequest.Get(root + "/Participants/" + Uri.EscapeDataString(participantKey)))
+            {
+                yield return SendAuthorized(person);
+                // 실제 참가자가 있으면 인덱스가 오래됐더라도 자동으로 삭제하지 않습니다.
+                if (person.responseCode != 404) { callback?.Invoke(false); yield break; }
+            }
+
+            // 다른 참가자 문서가 같은 ID를 사용 중이라면 연결을 자동 복구할 수 없습니다.
+            string pageToken = null;
+            do
+            {
+                string listUrl = root + "/Participants?pageSize=300" +
+                    (string.IsNullOrEmpty(pageToken) ? "" : "&pageToken=" + Uri.EscapeDataString(pageToken));
+                using (var list = UnityWebRequest.Get(listUrl))
+                {
+                    yield return SendAuthorized(list);
+                    if (list.responseCode != 200) { callback?.Invoke(false); yield break; }
+                    ListDocumentsResponse page = null;
+                    try { page = JsonUtility.FromJson<ListDocumentsResponse>(list.downloadHandler.text); }
+                    catch (Exception) { callback?.Invoke(false); yield break; }
+                    if (page == null) { callback?.Invoke(false); yield break; }
+                    if (page.documents != null)
+                    {
+                        foreach (FirestoreDocumentResponse document in page.documents)
+                        {
+                            string stored = document?.fields?.insta?.stringValue ?? document?.fields?.instaId?.stringValue;
+                            if (TryNormalizeInstaId(stored, out string normalized) && normalized == handle)
+                            { callback?.Invoke(false); yield break; }
+                        }
+                    }
+                    pageToken = page.nextPageToken;
+                }
+            } while (!string.IsNullOrEmpty(pageToken));
+
+            var writes = new List<DeleteWrite> {
+                new DeleteWrite { delete = prefix + "ParticipantKeys/insta_" + handle,
+                    currentDocument = new DeletePrecondition { updateTime = index.updateTime } }
+            };
+            using (var claimRequest = UnityWebRequest.Get(root + "/ProfileClaims/insta_" + handle))
+            {
+                yield return SendAuthorized(claimRequest);
+                if (claimRequest.responseCode == 200)
+                {
+                    ClaimReceipt claim = null;
+                    try { claim = JsonUtility.FromJson<ClaimReceipt>(claimRequest.downloadHandler.text); }
+                    catch (Exception) { }
+                    if (string.IsNullOrEmpty(claim?.updateTime) || claim.fields?.targetKey?.stringValue != participantKey)
+                    { callback?.Invoke(false); yield break; }
+                    writes.Add(new DeleteWrite { delete = prefix + "ProfileClaims/insta_" + handle,
+                        currentDocument = new DeletePrecondition { updateTime = claim.updateTime } });
+                }
+                else if (claimRequest.responseCode != 404) { callback?.Invoke(false); yield break; }
+            }
+
+            BeginWriteOperation();
+            using (var commit = new UnityWebRequest(root + ":commit", "POST"))
+            {
+                commit.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(
+                    JsonUtility.ToJson(new DeleteCommit { writes = writes.ToArray() })));
+                commit.downloadHandler = new DownloadHandlerBuffer();
+                commit.SetRequestHeader("Content-Type", "application/json");
+                yield return SendAuthorized(commit);
+                bool success = commit.responseCode == 200;
+                if (!success)
+                {
+                    // 응답만 유실된 경우 두 문서가 실제로 사라졌는지 확인합니다.
+                    success = true;
+                    foreach (DeleteWrite write in writes)
+                    {
+                        using (var verify = UnityWebRequest.Get(root + "/" + write.delete.Substring(prefix.Length)))
+                        {
+                            yield return SendAuthorized(verify);
+                            if (verify.responseCode != 404) { success = false; break; }
+                        }
+                    }
+                }
+                EndWriteOperation();
+                if (!success) LogRegistrationRequestFailure("고아 인덱스 정리", commit);
+                else Debug.Log("[Firebase] 고아 참가자 인덱스와 프로필 잠금 정리 완료. 등록을 다시 시도합니다.");
+                callback?.Invoke(success);
+            }
         }
 
         private static void LogRegistrationRequestFailure(string stage, UnityWebRequest request)
@@ -306,9 +447,10 @@ namespace ClawMachine.Mechanics
         }
 
         /// <summary>
-        /// 반대 성별 목록 중 'isPicked == false'인 참가자를 쿼리하여 무작위로 한 명을 선택합니다.
+        /// 반대 성별 참가자 중 뽑히지 않았고 지급 잠금도 없는 사람을 선택합니다.
         /// </summary>
-        public IEnumerator GetRandomMatch(string oppositeGender, Action<MatchedProfileResponse> callback)
+        public IEnumerator GetRandomMatch(string oppositeGender, Action<MatchedProfileResponse> callback,
+            HashSet<string> excludedDocumentIds = null)
         {
             if (string.IsNullOrEmpty(firebaseProjectId))
             {
@@ -344,7 +486,6 @@ namespace ClawMachine.Mechanics
                             "]" +
                         "}" +
                     "}" +
-                    ",\"limit\":20" +
                 "}" +
             "}";
 
@@ -357,82 +498,162 @@ namespace ClawMachine.Mechanics
 
                 yield return SendAuthorized(request);
 
-                if (request.result == UnityWebRequest.Result.Success)
-                {
-                    string rawJson = request.downloadHandler.text;
-                    
-                    // JsonUtility Array 래핑
-                    string wrappedJson = "{\"items\":" + rawJson + "}";
-                    
-                    try
-                    {
-                        RunQueryResponseList responseList = JsonUtility.FromJson<RunQueryResponseList>(wrappedJson);
-                        if (responseList?.items == null)
-                        {
-                            callback?.Invoke(new MatchedProfileResponse { success = false });
-                            yield break;
-                        }
-
-                        // 유효한 매칭 대상(필드가 있는 문서) 필터링
-                        List<RunQueryResponseItem> validItems = new List<RunQueryResponseItem>();
-                        foreach (var item in responseList.items)
-                        {
-                            if (item.document != null && item.document.fields != null && !string.IsNullOrEmpty(item.document.name))
-                            {
-                                // 이름만 있고 인스타 아이디가 없는 데이터는 매칭(보상) 후보에서 완전히 제외
-                                string instaVal = "";
-                                if (item.document.fields.insta != null && !string.IsNullOrEmpty(item.document.fields.insta.stringValue))
-                                {
-                                    instaVal = item.document.fields.insta.stringValue.Trim();
-                                }
-
-                                if (!string.IsNullOrEmpty(instaVal))
-                                {
-                                    validItems.Add(item);
-                                }
-                            }
-                        }
-
-                        if (validItems.Count > 0)
-                        {
-                            // 무작위 1명 추출
-                            RunQueryResponseItem chosen = validItems[UnityEngine.Random.Range(0, validItems.Count)];
-                            
-                            // document.name(전체 경로)에서 documentId 추출
-                            string docPath = chosen.document.name;
-                            string docId = docPath.Substring(docPath.LastIndexOf('/') + 1);
-
-                            MatchedProfileResponse match = new MatchedProfileResponse
-                            {
-                                success = true,
-                                querySucceeded = true,
-                                documentId = docId,
-                                name = chosen.document.fields.name?.stringValue ?? "익명",
-                                gender = chosen.document.fields.gender?.stringValue ?? oppositeGender,
-                                insta = chosen.document.fields.insta?.stringValue ?? "@unknown",
-                                bio = chosen.document.fields.bio?.stringValue ?? "인스타 친구해요!"
-                            };
-
-                            Debug.Log($"[Firebase] 매칭 대상 로드 성공: {match.name} ({match.insta})");
-                            callback?.Invoke(match);
-                        }
-                        else
-                        {
-                            Debug.LogWarning("[Firebase] 조건에 부합하는 매칭 대상이 없습니다.");
-                            callback?.Invoke(new MatchedProfileResponse { success = false, querySucceeded = true });
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogError($"[Firebase] 매칭 응답 파싱 실패: {ex.Message}");
-                        callback?.Invoke(new MatchedProfileResponse { success = false });
-                    }
-                }
-                else
+                if (request.result != UnityWebRequest.Result.Success)
                 {
                     Debug.LogError($"[Firebase] 매칭 쿼리 실패: HTTP {request.responseCode}, {request.error}");
                     callback?.Invoke(new MatchedProfileResponse { success = false });
+                    yield break;
                 }
+
+                List<RunQueryResponseItem> candidates = new List<RunQueryResponseItem>();
+                try
+                {
+                    var response = JsonUtility.FromJson<RunQueryResponseList>(
+                        "{\"items\":" + request.downloadHandler.text + "}");
+                    if (response?.items == null) throw new Exception("매칭 응답에 목록이 없습니다.");
+                    foreach (var item in response.items)
+                    {
+                        if (item?.document?.fields == null || string.IsNullOrEmpty(item.document.name)) continue;
+                        string docId = item.document.name.Substring(item.document.name.LastIndexOf('/') + 1);
+                        if (excludedDocumentIds != null && excludedDocumentIds.Contains(docId)) continue;
+                        if (!TryNormalizeInstaId(item.document.fields.insta?.stringValue, out _)) continue;
+                        candidates.Add(item);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[Firebase] 매칭 응답 파싱 실패: {ex.Message}");
+                    callback?.Invoke(new MatchedProfileResponse { success = false });
+                    yield break;
+                }
+
+                while (candidates.Count > 0)
+                {
+                    int index = UnityEngine.Random.Range(0, candidates.Count);
+                    RunQueryResponseItem chosen = candidates[index];
+                    candidates.RemoveAt(index);
+                    string docPath = chosen.document.name;
+                    string docId = docPath.Substring(docPath.LastIndexOf('/') + 1);
+                    string insta = chosen.document.fields.insta.stringValue;
+                    bool? claimed = null;
+                    yield return GetProfileClaimState(insta, value => claimed = value);
+                    if (!claimed.HasValue)
+                    {
+                        callback?.Invoke(new MatchedProfileResponse { success = false });
+                        yield break;
+                    }
+                    if (claimed.Value) continue;
+
+                    MatchedProfileResponse match = new MatchedProfileResponse
+                    {
+                        success = true,
+                        querySucceeded = true,
+                        documentId = docId,
+                        name = chosen.document.fields.name?.stringValue ?? "익명",
+                        gender = chosen.document.fields.gender?.stringValue ?? oppositeGender,
+                        insta = insta,
+                        bio = chosen.document.fields.bio?.stringValue ?? "인스타 친구해요!"
+                    };
+                    Debug.Log($"[Firebase] 매칭 대상 로드 성공: {match.name} ({match.insta})");
+                    callback?.Invoke(match);
+                    yield break;
+                }
+
+                Debug.LogWarning("[Firebase] 지급 가능한 매칭 대상이 없습니다.");
+                callback?.Invoke(new MatchedProfileResponse { success = false, querySucceeded = true });
+            }
+        }
+
+        private IEnumerator GetProfileClaimState(string insta, Action<bool?> callback)
+        {
+            if (!TryNormalizeInstaId(insta, out string handle))
+            {
+                callback?.Invoke(null);
+                yield break;
+            }
+            string url = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/ProfileClaims/insta_{handle}";
+            using (var request = UnityWebRequest.Get(url))
+            {
+                yield return SendAuthorized(request);
+                if (request.responseCode == 200) callback?.Invoke(true);
+                else if (request.responseCode == 404) callback?.Invoke(false);
+                else
+                {
+                    Debug.LogError($"[Firebase] 프로필 잠금 확인 실패: HTTP {request.responseCode}, {request.error}");
+                    callback?.Invoke(null);
+                }
+            }
+        }
+
+        private IEnumerator ReadProfileClaimForParticipant(string insta, string documentId,
+            Action<ClaimReceipt, ParticipantUpdateResult> callback)
+        {
+            if (string.IsNullOrWhiteSpace(insta))
+            {
+                callback?.Invoke(null, ParticipantUpdateResult.Saved);
+                yield break;
+            }
+            if (!TryNormalizeInstaId(insta, out string handle))
+            {
+                callback?.Invoke(null, ParticipantUpdateResult.Failed);
+                yield break;
+            }
+
+            string url = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/ProfileClaims/insta_{handle}";
+            using (var request = UnityWebRequest.Get(url))
+            {
+                yield return SendAuthorized(request);
+                if (request.responseCode == 404)
+                {
+                    callback?.Invoke(null, ParticipantUpdateResult.Saved);
+                    yield break;
+                }
+                if (request.responseCode != 200)
+                {
+                    callback?.Invoke(null, ParticipantUpdateResult.Failed);
+                    yield break;
+                }
+                ClaimReceipt claim = null;
+                try { claim = JsonUtility.FromJson<ClaimReceipt>(request.downloadHandler.text); }
+                catch (Exception) { }
+                if (string.IsNullOrEmpty(claim?.updateTime) ||
+                    claim.fields?.targetKey?.stringValue != documentId)
+                {
+                    callback?.Invoke(null, ParticipantUpdateResult.ProfileClaimLocked);
+                    yield break;
+                }
+                callback?.Invoke(claim, ParticipantUpdateResult.Saved);
+            }
+        }
+
+        private IEnumerator CommitParticipantUpdateAndReleaseClaim(string documentId, string insta,
+            string participantUpdateTime, string claimUpdateTime, string fieldsJson, string fieldPathsJson,
+            Action<bool> callback)
+        {
+            if (BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAdmin ||
+                !TryNormalizeInstaId(insta, out string handle) ||
+                !System.Text.RegularExpressions.Regex.IsMatch(documentId, "^[a-zA-Z0-9._@ -]{1,200}$"))
+            { callback?.Invoke(false); yield break; }
+
+            string root = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents";
+            string prefix = $"projects/{firebaseProjectId}/databases/(default)/documents/";
+            string body = "{\"writes\":[{\"update\":{\"name\":\"" + prefix + "Participants/" + documentId +
+                "\",\"fields\":" + fieldsJson + "},\"updateMask\":{\"fieldPaths\":" + fieldPathsJson +
+                "},\"currentDocument\":{\"updateTime\":\"" + participantUpdateTime +
+                "\"}},{\"delete\":\"" + prefix + "ProfileClaims/insta_" + handle +
+                "\",\"currentDocument\":{\"updateTime\":\"" + claimUpdateTime + "\"}}]}";
+
+            BeginWriteOperation();
+            using (var request = new UnityWebRequest(root + ":commit", "POST"))
+            {
+                request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(body));
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.SetRequestHeader("Content-Type", "application/json");
+                yield return SendAuthorized(request);
+                EndWriteOperation();
+                if (request.responseCode != 200)
+                    Debug.LogError($"[Firebase] 참가자 뽑힘 해제와 잠금 삭제 실패: HTTP {request.responseCode}, {request.error}");
+                callback?.Invoke(request.responseCode == 200);
             }
         }
 
@@ -506,15 +727,16 @@ namespace ClawMachine.Mechanics
         }
 
         /// <summary>
-        /// 특정 참가자의 'isPicked' 상태를 변경(예: true로 업데이트하여 뽑힘 처리)합니다.
+        /// 참가자의 뽑힘 상태를 변경합니다. 해제 시 지급 잠금도 같은 commit에서 삭제합니다.
         /// </summary>
-        public IEnumerator ClaimProfile(string roundId, MatchedProfileResponse candidate, Action<bool> callback)
+        public IEnumerator ClaimProfile(string roundId, MatchedProfileResponse candidate, Action<bool> callback,
+            Action<ProfileClaimResult> resultCallback = null)
         {
             string handle = (candidate.insta ?? "").Trim().TrimStart('@').ToLowerInvariant();
             if (string.IsNullOrEmpty(roundId) || string.IsNullOrEmpty(candidate.documentId) ||
                 !System.Text.RegularExpressions.Regex.IsMatch(handle, "^[a-z0-9._]{1,30}$") ||
                 !System.Text.RegularExpressions.Regex.IsMatch(candidate.documentId, "^[a-zA-Z0-9._@ -]{1,200}$"))
-            { callback?.Invoke(false); yield break; }
+            { CompleteProfileClaim(ProfileClaimResult.Failed, callback, resultCallback); yield break; }
             string root = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents";
             string prefix = $"projects/{firebaseProjectId}/databases/(default)/documents/";
             string receipt = "MatchResults/love_" + roundId;
@@ -527,22 +749,37 @@ namespace ClawMachine.Mechanics
                     {
                         ClaimReceipt saved = null;
                         try { saved = JsonUtility.FromJson<ClaimReceipt>(check.downloadHandler.text); } catch { }
-                        callback?.Invoke(saved?.fields?.targetKey?.stringValue == candidate.documentId);
+                        CompleteProfileClaim(saved?.fields?.targetKey?.stringValue == candidate.documentId
+                            ? ProfileClaimResult.Claimed : ProfileClaimResult.Failed, callback, resultCallback);
                         yield break;
                     }
-                    if (check.responseCode != 404) { callback?.Invoke(false); yield break; }
+                    if (check.responseCode != 404)
+                    { CompleteProfileClaim(ProfileClaimResult.Failed, callback, resultCallback); yield break; }
                 }
                 FirestoreDocumentResponse person = null;
+                long personResponseCode;
                 using (var get = UnityWebRequest.Get(root + "/Participants/" + Uri.EscapeDataString(candidate.documentId)))
                 {
                     yield return SendAuthorized(get);
+                    personResponseCode = get.responseCode;
                     if (get.responseCode == 200)
                         try { person = JsonUtility.FromJson<FirestoreDocumentResponse>(get.downloadHandler.text); } catch { }
                 }
                 if (person?.fields == null || string.IsNullOrEmpty(person.updateTime) ||
                     person.fields.isPicked?.booleanValue == true ||
                     (person.fields.insta?.stringValue ?? "").Trim().TrimStart('@').ToLowerInvariant() != handle)
-                { callback?.Invoke(false); yield break; }
+                {
+                    CompleteProfileClaim(personResponseCode == 404 || person?.fields != null
+                        ? ProfileClaimResult.CandidateUnavailable : ProfileClaimResult.Failed,
+                        callback, resultCallback);
+                    yield break;
+                }
+                bool? alreadyClaimed = null;
+                yield return GetProfileClaimState(handle, value => alreadyClaimed = value);
+                if (!alreadyClaimed.HasValue)
+                { CompleteProfileClaim(ProfileClaimResult.Failed, callback, resultCallback); yield break; }
+                if (alreadyClaimed.Value)
+                { CompleteProfileClaim(ProfileClaimResult.CandidateUnavailable, callback, resultCallback); yield break; }
                 string body = "{\"writes\":[{\"update\":{\"name\":\"" + prefix + receipt +
                     "\",\"fields\":{\"targetKey\":{\"stringValue\":\"" + candidate.documentId +
                     "\"}}},\"currentDocument\":{\"exists\":false}},{\"update\":{\"name\":\"" +
@@ -560,12 +797,21 @@ namespace ClawMachine.Mechanics
                     commit.downloadHandler = new DownloadHandlerBuffer();
                     commit.SetRequestHeader("Content-Type", "application/json");
                     yield return SendAuthorized(commit);
-                    if (commit.responseCode == 200) { callback?.Invoke(true); yield break; }
+                    if (commit.responseCode == 200)
+                    { CompleteProfileClaim(ProfileClaimResult.Claimed, callback, resultCallback); yield break; }
+                    Debug.LogWarning($"[Firebase] 인스타 지급 확정 재시도: HTTP {commit.responseCode}, 대상 {candidate.documentId}, 회차 {roundId}");
                     if (commit.responseCode != 409 && commit.responseCode != 412 && commit.responseCode != 503 && commit.responseCode != 0)
-                    { callback?.Invoke(false); yield break; }
+                    { CompleteProfileClaim(ProfileClaimResult.Failed, callback, resultCallback); yield break; }
                 }
             }
-            callback?.Invoke(false);
+            CompleteProfileClaim(ProfileClaimResult.Failed, callback, resultCallback);
+        }
+
+        private static void CompleteProfileClaim(ProfileClaimResult result, Action<bool> callback,
+            Action<ProfileClaimResult> resultCallback)
+        {
+            resultCallback?.Invoke(result);
+            callback?.Invoke(result == ProfileClaimResult.Claimed);
         }
 
         /// <summary>사탕 결과와 성공 횟수를 같은 회차 영수증으로 한 번만 확정합니다.</summary>
@@ -613,17 +859,61 @@ namespace ClawMachine.Mechanics
             callback?.Invoke(false);
         }
 
-        public IEnumerator UpdatePickedStatus(string documentId, bool isPicked, Action<bool> callback)
+        public IEnumerator UpdatePickedStatus(string documentId, bool isPicked, Action<bool> callback,
+            Action<ParticipantUpdateResult> resultCallback = null)
         {
             if (string.IsNullOrEmpty(firebaseProjectId) || string.IsNullOrEmpty(documentId))
             {
                 Debug.LogError("[Firebase] Project ID 또는 Document ID가 유효하지 않습니다.");
-                callback?.Invoke(false);
+                CompleteParticipantUpdate(ParticipantUpdateResult.Failed, callback, resultCallback);
                 yield break;
             }
 
+            string root = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents";
+            FirestoreDocumentResponse person = null;
+            using (var get = UnityWebRequest.Get(root + "/Participants/" + Uri.EscapeDataString(documentId)))
+            {
+                yield return SendAuthorized(get);
+                if (get.responseCode == 200)
+                    try { person = JsonUtility.FromJson<FirestoreDocumentResponse>(get.downloadHandler.text); }
+                    catch (Exception) { }
+            }
+            if (string.IsNullOrEmpty(person?.updateTime) || person.fields == null)
+            {
+                CompleteParticipantUpdate(ParticipantUpdateResult.Failed, callback, resultCallback);
+                yield break;
+            }
+
+            if (!isPicked)
+            {
+                string insta = person.fields.insta?.stringValue ?? person.fields.instaId?.stringValue;
+                ClaimReceipt claim = null;
+                ParticipantUpdateResult claimStatus = ParticipantUpdateResult.Failed;
+                yield return ReadProfileClaimForParticipant(insta, documentId,
+                    (value, status) => { claim = value; claimStatus = status; });
+                if (claimStatus != ParticipantUpdateResult.Saved)
+                {
+                    CompleteParticipantUpdate(claimStatus, callback, resultCallback);
+                    yield break;
+                }
+                if (claim != null)
+                {
+                    string fieldsJson = JsonUtility.ToJson(new FirestoreUpdateFields {
+                        isPicked = new FirestoreBoolField(false)
+                    });
+                    bool saved = false;
+                    yield return CommitParticipantUpdateAndReleaseClaim(documentId, insta,
+                        person.updateTime, claim.updateTime, fieldsJson, "[\"isPicked\"]",
+                        success => saved = success);
+                    CompleteParticipantUpdate(saved ? ParticipantUpdateResult.Saved : ParticipantUpdateResult.Failed,
+                        callback, resultCallback);
+                    yield break;
+                }
+            }
+
             // updateMask 쿼리 파라미터를 사용해 오직 'isPicked' 필드만 교체(PATCH)
-            string url = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/Participants/{documentId}?updateMask.fieldPaths=isPicked";
+            string url = root + "/Participants/" + Uri.EscapeDataString(documentId) +
+                "?updateMask.fieldPaths=isPicked&currentDocument.updateTime=" + Uri.EscapeDataString(person.updateTime);
 
             // PATCH 바디용 데이터 빌드
             FirestoreUpdateDocument patchDoc = new FirestoreUpdateDocument();
@@ -646,14 +936,64 @@ namespace ClawMachine.Mechanics
                 if (request.result == UnityWebRequest.Result.Success)
                 {
                     Debug.Log($"[Firebase] 문서({documentId}) isPicked={isPicked} 업데이트 완료");
-                    callback?.Invoke(true);
+                    CompleteParticipantUpdate(ParticipantUpdateResult.Saved, callback, resultCallback);
                 }
                 else
                 {
                     Debug.LogError($"[Firebase] 문서 업데이트 실패: {request.error}\n응답: {request.downloadHandler.text}");
-                    callback?.Invoke(false);
+                    CompleteParticipantUpdate(ParticipantUpdateResult.Failed, callback, resultCallback);
                 }
             }
+        }
+
+        private static void CompleteParticipantUpdate(ParticipantUpdateResult result, Action<bool> callback,
+            Action<ParticipantUpdateResult> resultCallback)
+        {
+            resultCallback?.Invoke(result);
+            callback?.Invoke(result == ParticipantUpdateResult.Saved);
+        }
+
+        /// <summary>현재 Participants 컬렉션의 문서 수를 집계합니다. 실패하면 null을 반환합니다.</summary>
+        public IEnumerator GetParticipantCount(Action<int?> callback)
+        {
+            if (string.IsNullOrEmpty(firebaseProjectId))
+            {
+                callback?.Invoke(null);
+                yield break;
+            }
+
+            string url = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents:runAggregationQuery";
+            const string body = "{\"structuredAggregationQuery\":{\"aggregations\":[{\"count\":{},\"alias\":\"count\"}]," +
+                "\"structuredQuery\":{\"from\":[{\"collectionId\":\"Participants\"}]}}}";
+            using (var request = new UnityWebRequest(url, "POST"))
+            {
+                request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(body));
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.SetRequestHeader("Content-Type", "application/json");
+                yield return SendAuthorized(request);
+                if (request.responseCode != 200)
+                {
+                    Debug.LogError($"[Firebase] 참가자 수 조회 실패: HTTP {request.responseCode}, {request.error}");
+                    callback?.Invoke(null);
+                    yield break;
+                }
+
+                try
+                {
+                    var data = JsonUtility.FromJson<AggregateItems>("{\"items\":" + request.downloadHandler.text + "}");
+                    if (data?.items != null && data.items.Length > 0 &&
+                        int.TryParse(data.items[0]?.result?.aggregateFields?.count?.integerValue, out int count))
+                    {
+                        callback?.Invoke(count);
+                        yield break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[Firebase] 참가자 수 파싱 실패: {ex.Message}");
+                }
+            }
+            callback?.Invoke(null);
         }
 
         /// <summary>
@@ -741,19 +1081,65 @@ namespace ClawMachine.Mechanics
         }
 
         /// <summary>
-        /// 참가자의 편집 가능한 필드만 갱신합니다.
+        /// 참가자의 편집 가능한 필드를 갱신합니다. 뽑힘 해제 시 지급 잠금도 함께 삭제합니다.
         /// </summary>
-        public IEnumerator UpdateParticipantFullData(ParticipantData data, Action<bool> callback)
+        public IEnumerator UpdateParticipantFullData(ParticipantData data, Action<bool> callback,
+            Action<ParticipantUpdateResult> resultCallback = null)
         {
             if (string.IsNullOrEmpty(firebaseProjectId) || string.IsNullOrEmpty(data.documentId))
             {
-                callback?.Invoke(false);
+                CompleteParticipantUpdate(ParticipantUpdateResult.Failed, callback, resultCallback);
                 yield break;
             }
 
-            string url = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/Participants/{data.documentId}" +
+            string root = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents";
+            FirestoreDocumentResponse current = null;
+            using (var get = UnityWebRequest.Get(root + "/Participants/" + Uri.EscapeDataString(data.documentId)))
+            {
+                yield return SendAuthorized(get);
+                if (get.responseCode == 200)
+                    try { current = JsonUtility.FromJson<FirestoreDocumentResponse>(get.downloadHandler.text); }
+                    catch (Exception) { }
+            }
+            if (string.IsNullOrEmpty(current?.updateTime) || current.fields == null)
+            {
+                CompleteParticipantUpdate(ParticipantUpdateResult.Failed, callback, resultCallback);
+                yield break;
+            }
+
+            ClaimReceipt existingClaim = null;
+            string currentInsta = current.fields.insta?.stringValue ?? current.fields.instaId?.stringValue;
+            if (!data.isPicked)
+            {
+                ParticipantUpdateResult claimStatus = ParticipantUpdateResult.Failed;
+                yield return ReadProfileClaimForParticipant(currentInsta, data.documentId,
+                    (value, status) => { existingClaim = value; claimStatus = status; });
+                if (claimStatus != ParticipantUpdateResult.Saved)
+                {
+                    CompleteParticipantUpdate(claimStatus, callback, resultCallback);
+                    yield break;
+                }
+                if (existingClaim != null && current.fields.isPicked?.booleanValue != true)
+                {
+                    // 이미 어긋난 데이터의 일반 필드 저장이 지급 잠금을 암묵적으로 해제하지 않도록 합니다.
+                    CompleteParticipantUpdate(ParticipantUpdateResult.ProfileClaimLocked, callback, resultCallback);
+                    yield break;
+                }
+                if (!string.IsNullOrWhiteSpace(data.insta) && data.insta != currentInsta)
+                {
+                    bool? newHandleClaimed = null;
+                    yield return GetProfileClaimState(data.insta, value => newHandleClaimed = value);
+                    if (!newHandleClaimed.HasValue)
+                    { CompleteParticipantUpdate(ParticipantUpdateResult.Failed, callback, resultCallback); yield break; }
+                    if (newHandleClaimed.Value)
+                    { CompleteParticipantUpdate(ParticipantUpdateResult.ProfileClaimLocked, callback, resultCallback); yield break; }
+                }
+            }
+
+            string url = root + "/Participants/" + Uri.EscapeDataString(data.documentId) +
                 "?updateMask.fieldPaths=name&updateMask.fieldPaths=insta&updateMask.fieldPaths=bio" +
-                "&updateMask.fieldPaths=gender&updateMask.fieldPaths=isPicked&updateMask.fieldPaths=attempts";
+                "&updateMask.fieldPaths=gender&updateMask.fieldPaths=isPicked&updateMask.fieldPaths=attempts" +
+                "&currentDocument.updateTime=" + Uri.EscapeDataString(current.updateTime);
 
             var fields = new RegistrationFields {
                 name = new FirestoreStringField(data.name), insta = new FirestoreStringField(data.insta),
@@ -761,6 +1147,18 @@ namespace ClawMachine.Mechanics
                 isPicked = new FirestoreBoolField(data.isPicked), attempts = new FirestoreIntField(data.attempts)
             };
             string jsonPayload = "{\"fields\":" + JsonUtility.ToJson(fields) + "}";
+
+            if (existingClaim != null)
+            {
+                bool saved = false;
+                yield return CommitParticipantUpdateAndReleaseClaim(data.documentId, currentInsta,
+                    current.updateTime, existingClaim.updateTime, JsonUtility.ToJson(fields),
+                    "[\"name\",\"insta\",\"bio\",\"gender\",\"isPicked\",\"attempts\"]",
+                    success => saved = success);
+                CompleteParticipantUpdate(saved ? ParticipantUpdateResult.Saved : ParticipantUpdateResult.Failed,
+                    callback, resultCallback);
+                yield break;
+            }
 
             BeginWriteOperation();
             using (UnityWebRequest request = new UnityWebRequest(url, "PATCH"))
@@ -776,14 +1174,14 @@ namespace ClawMachine.Mechanics
                 if (request.result == UnityWebRequest.Result.Success)
                 {
                     Debug.Log($"[Firebase] 데이터 업데이트 성공: {data.documentId}");
-                    callback?.Invoke(true);
+                    CompleteParticipantUpdate(ParticipantUpdateResult.Saved, callback, resultCallback);
                 }
                 else
                 {
                     string response = request.downloadHandler?.text ?? "";
                     if (response.Length > 1000) response = response.Substring(0, 1000) + "...";
                     Debug.LogError($"[Firebase] 데이터 업데이트 실패: HTTP {request.responseCode}, {request.error}. 응답: {response}");
-                    callback?.Invoke(false);
+                    CompleteParticipantUpdate(ParticipantUpdateResult.Failed, callback, resultCallback);
                 }
             }
         }
