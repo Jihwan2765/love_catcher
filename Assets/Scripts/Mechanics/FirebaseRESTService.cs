@@ -1230,8 +1230,10 @@ namespace ClawMachine.Mechanics
         private IEnumerator IncrementPlayAndRevenueCoroutine(int revenue, string insta, string roundId,
             Action<bool, string> callback)
         {
+            bool isGuest = string.IsNullOrWhiteSpace(insta);
             string handle = (insta ?? "").Trim().TrimStart('@').ToLowerInvariant();
-            if (revenue < 0 || !System.Text.RegularExpressions.Regex.IsMatch(handle, "^[a-z0-9._]{1,30}$") ||
+            string receiptKind = isGuest ? "love_guest" : "love";
+            if (revenue < 0 || (!isGuest && !System.Text.RegularExpressions.Regex.IsMatch(handle, "^[a-z0-9._]{1,30}$")) ||
                 !System.Text.RegularExpressions.Regex.IsMatch(roundId ?? "", "^[a-f0-9]{32}$") ||
                 string.IsNullOrEmpty(firebaseProjectId))
             { callback?.Invoke(false, "참가자 또는 Firebase 설정을 확인해 주세요."); yield break; }
@@ -1247,7 +1249,7 @@ namespace ClawMachine.Mechanics
                     PlayReceiptDocument saved = null;
                     try { saved = JsonUtility.FromJson<PlayReceiptDocument>(existing.downloadHandler.text); }
                     catch (Exception) { }
-                    bool same = saved?.fields?.kind?.stringValue == "love" &&
+                    bool same = saved?.fields?.kind?.stringValue == receiptKind &&
                         saved.fields.insta?.stringValue == handle &&
                         saved.fields.revenue?.integerValue == revenue.ToString();
                     callback?.Invoke(same, same ? null : "회차 기록 충돌: " + roundId);
@@ -1256,10 +1258,10 @@ namespace ClawMachine.Mechanics
                 if (existing.responseCode != 404)
                 { callback?.Invoke(false, "회차 조회 실패: " + roundId); yield break; }
             }
-            string participantKey = null;
+            string participantKey = "";
             // 첫 플레이는 UI의 등록 요청과 함께 시작될 수 있으므로 인덱스가 생길 때까지
             // 코루틴으로만 기다립니다. 메인 스레드를 막거나 임의의 프로필을 만들지 않습니다.
-            for (int attempt = 0; attempt < 20; attempt++)
+            for (int attempt = 0; !isGuest && attempt < 20; attempt++)
             {
                 using (var index = UnityWebRequest.Get(root + "/ParticipantKeys/insta_" + handle))
                 {
@@ -1286,21 +1288,22 @@ namespace ClawMachine.Mechanics
                 }
                 yield return new WaitForSecondsRealtime(1f);
             }
-            if (participantKey == null)
+            if (!isGuest && string.IsNullOrEmpty(participantKey))
             { callback?.Invoke(false, "참가자 등록 확인 필요: " + roundId); yield break; }
 
-            string receiptFields = "\"kind\":{\"stringValue\":\"love\"},\"participantKey\":{\"stringValue\":\"" +
+            string receiptFields = "\"kind\":{\"stringValue\":\"" + receiptKind + "\"},\"participantKey\":{\"stringValue\":\"" +
                 participantKey + "\"},\"insta\":{\"stringValue\":\"" + handle +
                 "\"},\"revenue\":{\"integerValue\":\"" + revenue + "\"}";
+            string participantWrite = isGuest ? "" :
+                ", {\"transform\":{\"document\":\"" + prefix + "Participants/" + participantKey +
+                "\",\"fieldTransforms\":[{\"fieldPath\":\"attempts\",\"increment\":{\"integerValue\":\"1\"}}]}," +
+                "\"currentDocument\":{\"exists\":true}}";
             string payload = "{\"writes\":[{\"update\":{\"name\":\"" + prefix + receiptPath +
                 "\",\"fields\":{" + receiptFields + "}},\"currentDocument\":{\"exists\":false}}," +
                 "{\"transform\":{\"document\":\"" + prefix + "GameState/stats\",\"fieldTransforms\":[" +
                 "{\"fieldPath\":\"totalPlays\",\"increment\":{\"integerValue\":\"1\"}}," +
                 "{\"fieldPath\":\"totalRevenue\",\"increment\":{\"integerValue\":\"" + revenue + "\"}}]}," +
-                "\"currentDocument\":{\"exists\":true}}," +
-                "{\"transform\":{\"document\":\"" + prefix + "Participants/" + participantKey +
-                "\",\"fieldTransforms\":[{\"fieldPath\":\"attempts\",\"increment\":{\"integerValue\":\"1\"}}]}," +
-                "\"currentDocument\":{\"exists\":true}}]}";
+                "\"currentDocument\":{\"exists\":true}}" + participantWrite + "]}";
             using (var request = new UnityWebRequest(root + ":commit", "POST"))
             {
                 request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(payload));
@@ -1316,7 +1319,7 @@ namespace ClawMachine.Mechanics
                         PlayReceiptDocument saved = null;
                         try { saved = JsonUtility.FromJson<PlayReceiptDocument>(check.downloadHandler.text); }
                         catch (Exception) { }
-                        if (saved?.fields?.kind?.stringValue == "love" &&
+                        if (saved?.fields?.kind?.stringValue == receiptKind &&
                             saved.fields.participantKey?.stringValue == participantKey &&
                             saved.fields.insta?.stringValue == handle &&
                             saved.fields.revenue?.integerValue == revenue.ToString())

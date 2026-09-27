@@ -100,6 +100,35 @@ using(var play=JsonDocument.Parse(requests[^1]))
     writes[2].GetProperty("transform").GetProperty("fieldTransforms")[0].GetProperty("fieldPath").GetString()!="attempts")
     throw new Exception("participant attempts was not committed with play receipt");
 }
+const string guestRound="00112233445566778899aabbccddeeff";
+string guestReceipt=null;
+int guestCommits=0;
+var registeredResponder=UnityWebRequest.Responder;
+UnityWebRequest.Responder=req=>{
+ if(req.method=="GET"&&req.url.EndsWith("GameRounds/love_"+guestRound))
+  return guestReceipt==null?(404,""):(200,guestReceipt);
+ if(req.method=="POST"&&req.url.EndsWith(":commit")&&
+    Encoding.UTF8.GetString(req.uploadHandler.bytes).Contains("GameRounds/love_"+guestRound))
+ {
+  guestCommits++;
+  using var json=JsonDocument.Parse(req.uploadHandler.bytes);
+  var writes=json.RootElement.GetProperty("writes");
+  if(writes.GetArrayLength()!=2 ||
+     writes[0].GetProperty("update").GetProperty("fields").GetProperty("kind").GetProperty("stringValue").GetString()!="love_guest" ||
+     writes[1].GetProperty("transform").GetProperty("fieldTransforms")[0].GetProperty("fieldPath").GetString()!="totalPlays")
+   throw new Exception("guest play must write only receipt and shared statistics");
+  guestReceipt="{\"fields\":"+writes[0].GetProperty("update").GetProperty("fields").GetRawText()+"}";
+  return(503,""); // 커밋은 성공했지만 응답만 유실된 경우
+ }
+ if(req.url.Contains("ParticipantKeys/")||req.url.Contains("Participants/"))
+  throw new Exception("guest play accessed participant data");
+ return registeredResponder(req);
+};
+service.IncrementPlayCountAndRevenue(500,"",guestRound,(ok,_)=>{if(!ok)throw new Exception("guest play failed");});
+service.IncrementPlayCountAndRevenue(500,"",guestRound,(ok,_)=>{if(!ok)throw new Exception("guest play replay failed");});
+service.IncrementPlayCountAndRevenue(1000,"",guestRound,(ok,_)=>{if(ok)throw new Exception("guest round conflict accepted");});
+if(guestCommits!=1)throw new Exception("guest play committed more than once");
+UnityWebRequest.Responder=registeredResponder;
 const string retryRound="fedcba9876543210fedcba9876543210";
 var normalResponder=UnityWebRequest.Responder;
 int interrupted=0;

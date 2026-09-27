@@ -1084,17 +1084,18 @@ namespace ClawMachine.UI
                 return;
             }
 
-            if (string.IsNullOrEmpty(registeredName) || string.IsNullOrWhiteSpace(registeredInsta))
+            if (string.IsNullOrEmpty(registeredName))
             {
                 if (registerWarningText != null)
                 {
-                    registerWarningText.text = "이름과 인스타 아이디를 입력해 주세요.";
+                    registerWarningText.text = "이름을 입력해 주세요.";
                     registerWarningText.style.display = DisplayStyle.Flex;
                 }
                 Debug.LogWarning("필수 입력 항목 누락.");
                 return;
             }
-            if (!ClawMachine.Mechanics.FirebaseRESTService.TryNormalizeInstaId(registeredInsta, out _))
+            bool isGuest = string.IsNullOrWhiteSpace(registeredInsta);
+            if (!isGuest && !ClawMachine.Mechanics.FirebaseRESTService.TryNormalizeInstaId(registeredInsta, out _))
             {
                 ShowRegistrationError("인스타 ID는 영문, 숫자, 마침표, 밑줄로 30자 이내로 입력해 주세요.");
                 return;
@@ -1106,6 +1107,13 @@ namespace ClawMachine.UI
             }
 
             if (registerWarningText != null) registerWarningText.style.display = DisplayStyle.None;
+            if (isGuest)
+            {
+                registeredInsta = "";
+                registeredBio = "";
+                CheckCoinAndProceed();
+                return;
+            }
             int generation = ++registrationRequestGeneration;
             SetRegistrationLookupBusy(true);
             StartCoroutine(firebase.CheckInstaIdExists(registeredInsta, exists => {

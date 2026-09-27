@@ -15,6 +15,7 @@
                 <ui:VisualElement class="form-field">
                     <ui:Label text="인스타 아이디 (선택)" class="form-label" style="font-size: 16px; color: rgb(255, 255, 255);" />
                     <ui:TextField name="InputInsta" placeholder-text="@instagram_id" class="form-input registration-input" style="opacity: 1;" />
+                    <ui:Label text="비워두면 게스트로 진행하며, 인스타 매칭과 프로필 등록은 하지 않습니다." style="color: rgba(255, 255, 255, 0.7); font-size: 12px; margin-top: 3px;" />
                     <ui:Label name="RegisterWarningText" style="color: rgb(255, 59, 48); font-size: 14px; margin-top: 4px; display: none;" />
                 </ui:VisualElement>
                 <ui:VisualElement class="form-field">

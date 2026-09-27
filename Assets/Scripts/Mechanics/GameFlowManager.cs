@@ -259,9 +259,15 @@ namespace ClawMachine.Mechanics
                 return;
             }
 
-            if (firebaseService == null || string.IsNullOrWhiteSpace(insta))
+            if (firebaseService == null)
             {
-                ClawMachineUIManager.Instance.ShowRegistrationError("인스타 ID와 DB 연결을 확인해 주세요.");
+                ClawMachineUIManager.Instance.ShowRegistrationError("DB 연결을 확인해 주세요.");
+                return;
+            }
+            // 인스타 ID가 없으면 참가자 프로필과 매칭 인덱스를 만들지 않습니다.
+            if (string.IsNullOrWhiteSpace(insta))
+            {
+                ActivateGameSession();
                 return;
             }
             if (!isDuplicateRegistration)
