@@ -148,7 +148,7 @@ Firebase 프로젝트 ID와 Web API Key는 `Assets/Resources/FirebaseConfig.json
    FIREBASE_WEB_API_KEY=your-firebase-web-api-key
 
    # [선택] 결제 안내 팝업에 노출될 계좌번호 및 예금주
-   BANK_ACCOUNT_INFO=🏦 토스뱅크 0000-0000-0000 홍길동 🏦
+   BANK_ACCOUNT_INFO=🏦 토스뱅크 1002-5198-3143 권신혁 🏦
    ```
 
 > 💡 **안내**: `.env` 파일은 `.gitignore`에 등록되어 있으므로 Git 커밋 시 외부에 노출되지 않습니다.
