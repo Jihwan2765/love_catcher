@@ -5795,20 +5795,20 @@ MonoBehaviour:
   firebaseService: {fileID: 0}
   sessionTimeLimit: 60
   pityTriggerCount: 5
-  maleProbLegendary: 10
-  maleProbDoll: 30
-  maleProbInstagram: 40
+  maleProbLegendary: 1
+  maleProbDoll: 35
+  maleProbInstagram: 44
   maleProbCandy: 20
-  femaleProbLegendary: 10
-  femaleProbDoll: 40
-  femaleProbInstagram: 30
+  femaleProbLegendary: 1
+  femaleProbDoll: 44
+  femaleProbInstagram: 35
   femaleProbCandy: 20
-  maleNoInstaProbLegendary: 10
-  maleNoInstaProbDoll: 30
-  maleNoInstaProbCandy: 60
-  femaleNoInstaProbLegendary: 10
-  femaleNoInstaProbDoll: 40
-  femaleNoInstaProbCandy: 50
+  maleNoInstaProbLegendary: 1
+  maleNoInstaProbDoll: 35
+  maleNoInstaProbCandy: 64
+  femaleNoInstaProbLegendary: 1
+  femaleNoInstaProbDoll: 35
+  femaleNoInstaProbCandy: 64
   maleProfiles: []
   femaleProfiles: []
   totalInstaCards: 20

@@ -29,26 +29,26 @@ namespace ClawMachine.Mechanics
         public int pityTriggerCount = 5;
         
         [Header("Male Specific Probabilities (%)")]
-        [Range(0f, 100f)] public float maleProbLegendary = 10f;
-        [Range(0f, 100f)] public float maleProbDoll = 30f;
-        [Range(0f, 100f)] public float maleProbInstagram = 40f;
+        [Range(0f, 100f)] public float maleProbLegendary = 1f;
+        [Range(0f, 100f)] public float maleProbDoll = 35f;
+        [Range(0f, 100f)] public float maleProbInstagram = 44f;
         [Range(0f, 100f)] public float maleProbCandy = 20f;
 
         [Header("Female Specific Probabilities (%)")]
-        [Range(0f, 100f)] public float femaleProbLegendary = 10f;
-        [Range(0f, 100f)] public float femaleProbDoll = 40f;
-        [Range(0f, 100f)] public float femaleProbInstagram = 30f;
+        [Range(0f, 100f)] public float femaleProbLegendary = 1f;
+        [Range(0f, 100f)] public float femaleProbDoll = 44f;
+        [Range(0f, 100f)] public float femaleProbInstagram = 35f;
         [Range(0f, 100f)] public float femaleProbCandy = 20f;
 
         [Header("Male Probabilities Without Instagram (%)")]
-        [Range(0f, 100f)] public float maleNoInstaProbLegendary = 10f;
-        [Range(0f, 100f)] public float maleNoInstaProbDoll = 30f;
-        [Range(0f, 100f)] public float maleNoInstaProbCandy = 60f;
+        [Range(0f, 100f)] public float maleNoInstaProbLegendary = 1f;
+        [Range(0f, 100f)] public float maleNoInstaProbDoll = 35f;
+        [Range(0f, 100f)] public float maleNoInstaProbCandy = 64f;
 
         [Header("Female Probabilities Without Instagram (%)")]
-        [Range(0f, 100f)] public float femaleNoInstaProbLegendary = 10f;
-        [Range(0f, 100f)] public float femaleNoInstaProbDoll = 40f;
-        [Range(0f, 100f)] public float femaleNoInstaProbCandy = 50f;
+        [Range(0f, 100f)] public float femaleNoInstaProbLegendary = 1f;
+        [Range(0f, 100f)] public float femaleNoInstaProbDoll = 35f;
+        [Range(0f, 100f)] public float femaleNoInstaProbCandy = 64f;
         
         [Header("Mock Database (Firebase 연동 대기용)")]
         [Tooltip("남성 참가자 목록 (여성이 플레이할 때 매칭 대상)")]
@@ -88,21 +88,22 @@ namespace ClawMachine.Mechanics
 
         public bool IsInitialized { get; private set; }
         public bool HasRecoverableSession => sessionAttempts > 0;
+        public bool IsSessionStarting => sessionStarting;
 
-        private const float DefaultMaleLegendary = 10f;
-        private const float DefaultMaleDoll = 30f;
-        private const float DefaultMaleInstagram = 40f;
+        private const float DefaultMaleLegendary = 1f;
+        private const float DefaultMaleDoll = 35f;
+        private const float DefaultMaleInstagram = 44f;
         private const float DefaultMaleCandy = 20f;
-        private const float DefaultFemaleLegendary = 10f;
-        private const float DefaultFemaleDoll = 40f;
-        private const float DefaultFemaleInstagram = 30f;
+        private const float DefaultFemaleLegendary = 1f;
+        private const float DefaultFemaleDoll = 44f;
+        private const float DefaultFemaleInstagram = 35f;
         private const float DefaultFemaleCandy = 20f;
-        private const float DefaultMaleNoInstaLegendary = 10f;
-        private const float DefaultMaleNoInstaDoll = 30f;
-        private const float DefaultMaleNoInstaCandy = 60f;
-        private const float DefaultFemaleNoInstaLegendary = 10f;
-        private const float DefaultFemaleNoInstaDoll = 40f;
-        private const float DefaultFemaleNoInstaCandy = 50f;
+        private const float DefaultMaleNoInstaLegendary = 1f;
+        private const float DefaultMaleNoInstaDoll = 35f;
+        private const float DefaultMaleNoInstaCandy = 64f;
+        private const float DefaultFemaleNoInstaLegendary = 1f;
+        private const float DefaultFemaleNoInstaDoll = 35f;
+        private const float DefaultFemaleNoInstaCandy = 64f;
 
         private void Awake()
         {
