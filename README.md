@@ -1,8 +1,8 @@
 ## 2026-09-26 Firebase 운영 주의
 
-현재 변경은 **운영 빌드 전 테스트가 필요**합니다. 2026-09-27 운영 계정의 스태프 클레임과 게시된 `firestore.rules`로 익명 읽기 거부·스태프 읽기 허용을 확인했습니다. `FIREBASE_WEB_API_KEY`는 로컬 `.env`에만 있으며, `GameState/stats`의 실제 재고 입력과 실게임 쓰기·동시성·Windows 빌드 검증은 아직 필요합니다.
+현재 변경은 **운영 빌드 전 테스트가 필요**합니다. 2026-09-27 운영 계정의 스태프 클레임과 게시된 `firestore.rules`로 익명 읽기 거부·스태프 읽기 허용을 확인했습니다. Firebase Web API Key는 `Assets/Resources/FirebaseConfig.json`에 설정되어 있으며, `GameState/stats`의 실제 재고 입력과 실게임 쓰기·동시성·Windows 빌드 검증은 아직 필요합니다.
 
-Windows 빌드 시 프로젝트 루트의 Git 제외 `.env`에서 Firebase 프로젝트 ID와 Web API Key, 설정된 경우 기존 결제 안내 문구를 실행 파일 옆 `.env`로 자동 배치합니다. 필수 설정 누락·프로젝트 불일치 시 빌드를 중단합니다. `.exe`, `_Data` 폴더, 생성된 `.env`를 함께 배포하고 스태프 비밀번호는 파일에 넣지 않습니다.
+Windows 빌드 시 `FirebaseConfig.json`의 프로젝트 ID와 Web API Key를 실행 파일 옆 `.env`로 자동 배치합니다. 프로젝트 루트의 Git 제외 `.env`나 환경변수로 재정의할 수 있고, 결제 안내 문구를 설정했다면 함께 배치합니다. 설정 누락·프로젝트 불일치 시 빌드를 중단합니다. `.exe`, `_Data` 폴더, 생성된 `.env`를 함께 배포하고 스태프 비밀번호는 파일에 넣지 않습니다.
 
 로컬 REST 요청 모의 검사는 `dotnet run --project Tests/FirestoreRest/FirestoreRestChecks.csproj`로 실행합니다. 이 검사는 실제 Firebase 접속이나 Windows 빌드 검증을 대신하지 않습니다.
 
@@ -130,7 +130,7 @@ flowchart TD
 
 ### 3. 환경변수(.env) 설정
 
-본 프로젝트는 보안을 위해 프로젝트 ID 및 부스 정보를 `.env` 파일로 관리합니다.
+Firebase 프로젝트 ID와 Web API Key는 `Assets/Resources/FirebaseConfig.json`에 포함되어 있습니다. 로컬 설정을 재정의하거나 결제 안내 문구가 필요한 경우에만 Git 제외 `.env` 파일을 사용합니다. 프로젝트 ID는 JSON 설정과 같아야 합니다.
 
 1. 프로젝트 루트 폴더에 위치한 `.env.example` 파일을 복사하여 `.env` 파일을 생성합니다:
    ```powershell
@@ -141,8 +141,9 @@ flowchart TD
 
 2. 생성된 `.env` 파일을 텍스트 에디터로 열고 본인의 정보로 수정합니다:
    ```env
-   # [필수] Firebase 프로젝트 고유 ID
+   # [선택] 로컬 Firebase 설정을 재정의하는 경우
    FIREBASE_PROJECT_ID=your-firebase-project-id
+   FIREBASE_WEB_API_KEY=your-firebase-web-api-key
 
    # [선택] 결제 안내 팝업에 노출될 계좌번호 및 예금주
    BANK_ACCOUNT_INFO=🏦 토스뱅크 0000-0000-0000 홍길동 🏦
