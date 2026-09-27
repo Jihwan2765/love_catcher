@@ -505,6 +505,16 @@ namespace ClawMachine.Mechanics
                 if (reward == RewardType.Doll) totalDolls = Mathf.Max(0, totalDolls - 1);
                 else totalLegendaryDolls = Mathf.Max(0, totalLegendaryDolls - 1);
             }
+            else if (reward == RewardType.Candy)
+            {
+                bool claimed = false;
+                yield return firebaseService.ClaimCandy(rewardRoundId, success => claimed = success);
+                if (!claimed)
+                {
+                    ClawMachineUIManager.Instance.ShowRegistrationError("사탕 결과 저장 확인 실패: 지급 보류. 운영진에게 알려 주세요. " + rewardRoundId);
+                    yield break;
+                }
+            }
 
             ClawMachineUIManager.Instance.ShowRewardPopup(
                 reward,
@@ -517,8 +527,6 @@ namespace ClawMachine.Mechanics
             {
                 totalInstaCards = Mathf.Max(0, totalInstaCards - 1);
             }
-            if (firebaseService != null && reward != RewardType.Doll && reward != RewardType.Legendary)
-                firebaseService.IncrementSuccessCount();
             UpdateStatsUI();
         }
 

@@ -17,13 +17,16 @@ service.firebaseProjectId="test-project";
 var requests=new List<string>();
 int allRequests=0;
 const string playRound="0123456789abcdef0123456789abcdef";
+const string candyRound="abcdef0123456789abcdef0123456789";
 string playReceipt=null;
+string candyReceipt=null;
 var stats="{\"updateTime\":\"2026-01-01T00:00:00Z\",\"fields\":{\"totalDolls\":{\"integerValue\":\"1\"},\"totalLegendaryDolls\":{\"integerValue\":\"1\"},\"totalPlays\":{\"integerValue\":\"0\"},\"totalRevenue\":{\"integerValue\":\"0\"},\"totalRegistrations\":{\"integerValue\":\"0\"},\"totalSuccesses\":{\"integerValue\":\"0\"}}}";
 var person="{\"name\":\"projects/test-project/databases/(default)/documents/Participants/candidate\",\"updateTime\":\"2026-01-01T00:00:00Z\",\"fields\":{\"insta\":{\"stringValue\":\"candidate\"},\"isPicked\":{\"booleanValue\":false}}}";
 UnityWebRequest.Responder=req=>{
  allRequests++;
  if(req.method=="GET"&&req.url.EndsWith("GameState/stats"))return(200,stats);
  if(req.method=="GET"&&req.url.EndsWith("GameRounds/love_"+playRound)&&playReceipt!=null)return(200,playReceipt);
+ if(req.method=="GET"&&req.url.EndsWith("GameRounds/love_candy_"+candyRound)&&candyReceipt!=null)return(200,candyReceipt);
  if(req.method=="GET"&&req.url.EndsWith("ParticipantKeys/insta_candidate"))return(200,"{\"fields\":{\"participantKey\":{\"stringValue\":\"candidate\"}}}");
  if(req.method=="GET"&&req.url.EndsWith("ParticipantKeys/insta_stale"))return(200,"{\"fields\":{\"participantKey\":{\"stringValue\":\"missing\"}}}");
  if(req.method=="GET"&&req.url.EndsWith("Participants/candidate"))return(200,person);
@@ -37,6 +40,9 @@ UnityWebRequest.Responder=req=>{
    if(first.TryGetProperty("update",out var update)&&
       update.GetProperty("name").GetString().EndsWith("GameRounds/love_"+playRound))
       playReceipt="{\"fields\":"+update.GetProperty("fields").GetRawText()+"}";
+   if(first.TryGetProperty("update",out update)&&
+      update.GetProperty("name").GetString().EndsWith("GameRounds/love_candy_"+candyRound))
+      candyReceipt="{\"fields\":"+update.GetProperty("fields").GetRawText()+"}";
   }
  }
  requests.Add(body);
@@ -44,7 +50,7 @@ UnityWebRequest.Responder=req=>{
  if(req.url.EndsWith(":runAggregationQuery"))return(200,"[{\"result\":{\"aggregateFields\":{\"count\":{\"integerValue\":\"2\"}}}}]");
  return(200,"{}");
 };
-bool registered=false,prize=false,profile=false,inventory=false,played=false;
+bool registered=false,prize=false,profile=false,candy=false,inventory=false,played=false;
 Run(service.RegisterPlayer("Name","Candidate","Bio","여",0,ok=>registered=ok));
 Run(service.CheckInstaIdExists("candidate",exists=>{if(exists!=true)throw new Exception("valid index rejected");}));
 Run(service.CheckInstaIdExists("stale",exists=>{if(exists!=null)throw new Exception("stale index accepted");}));
@@ -58,12 +64,35 @@ if(allRequests!=beforeUnauthenticatedLookup)throw new Exception("unauthenticated
 typeof(BoothStaffAuth).GetField("idToken",BindingFlags.Instance|BindingFlags.NonPublic).SetValue(auth,"x."+claims+".x");
 Run(service.ClaimPrize("round1",false,ok=>prize=ok)); Run(service.CheckInstaIdExists("fresh",exists=>{if(exists!=false)throw new Exception("bad duplicate check");})); Run(service.GetRandomMatch("여",match=>{if(match.success||!match.querySucceeded)throw new Exception("empty match pool was treated as query failure");}));
 Run(service.ClaimProfile("round2",new MatchedProfileResponse{documentId="candidate",insta="candidate"},ok=>profile=ok));
+Run(service.ClaimCandy(candyRound,ok=>candy=ok));
+Run(service.ClaimCandy(candyRound,ok=>{if(!ok)throw new Exception("same candy result replay failed");}));
 Run(service.GetUnpickedCounts((male,female)=>{if(male!=2||female!=2)throw new Exception("bad aggregation: "+male+" "+female);}));
 Run(service.UpdateTotalDolls(3,ok=>inventory=ok));
 service.IncrementPlayCountAndRevenue(500,"candidate",playRound,(ok,_)=>played=ok);
 service.IncrementPlayCountAndRevenue(500,"candidate",playRound,(ok,_)=>{if(!ok)throw new Exception("same play replay failed");});
 service.IncrementPlayCountAndRevenue(1000,"candidate",playRound,(ok,_)=>{if(ok)throw new Exception("mismatched play replay accepted");});
-if(!registered||!prize||!profile||!inventory||!played||requests.Count!=8)throw new Exception($"flows: {registered} {prize} {profile} {inventory} {played} {requests.Count}");
+if(!registered||!prize||!profile||!candy||!inventory||!played||requests.Count!=9)throw new Exception($"flows: {registered} {prize} {profile} {candy} {inventory} {played} {requests.Count}");
+bool checkedProfile=false,checkedCandy=false;
+foreach(var requestBody in requests)
+{
+ if(requestBody.Contains("MatchResults/love_round2"))
+ {
+  using var match=JsonDocument.Parse(requestBody);
+  var writes=match.RootElement.GetProperty("writes");
+  if(writes.GetArrayLength()!=4||writes[3].GetProperty("transform").GetProperty("fieldTransforms")[0].GetProperty("fieldPath").GetString()!="totalSuccesses")
+   throw new Exception("profile claim does not commit success count atomically");
+  checkedProfile=true;
+ }
+ if(requestBody.Contains("GameRounds/love_candy_"+candyRound))
+ {
+  using var consolation=JsonDocument.Parse(requestBody);
+  var writes=consolation.RootElement.GetProperty("writes");
+  if(writes.GetArrayLength()!=2||writes[1].GetProperty("transform").GetProperty("fieldTransforms")[0].GetProperty("fieldPath").GetString()!="totalSuccesses")
+   throw new Exception("candy claim does not commit success count atomically");
+  checkedCandy=true;
+ }
+}
+if(!checkedProfile||!checkedCandy)throw new Exception("reward receipts were not written");
 using(var play=JsonDocument.Parse(requests[^1]))
 {
  var writes=play.RootElement.GetProperty("writes");
@@ -84,6 +113,24 @@ service.IncrementPlayCountAndRevenue(0,"candidate",retryRound,
     (ok,_)=>{if(ok)throw new Exception("unconfirmed play was accepted");});
 service.IncrementPlayCountAndRevenue(0,"candidate",retryRound,
     (ok,_)=>{if(!ok)throw new Exception("same round retry failed");});
+const string lostCandyRound="123456789abcdef0123456789abcdef0";
+string lostCandyReceipt=null;
+int lostCandyCommits=0;
+UnityWebRequest.Responder=req=>{
+ if(req.method=="GET"&&req.url.EndsWith("GameRounds/love_candy_"+lostCandyRound))
+  return lostCandyReceipt==null?(404,""):(200,lostCandyReceipt);
+ if(req.method=="POST"&&req.url.EndsWith(":commit")&&
+    Encoding.UTF8.GetString(req.uploadHandler.bytes).Contains("GameRounds/love_candy_"+lostCandyRound))
+ {
+  lostCandyCommits++;
+  using var json=JsonDocument.Parse(req.uploadHandler.bytes);
+  lostCandyReceipt="{\"fields\":"+json.RootElement.GetProperty("writes")[0].GetProperty("update").GetProperty("fields").GetRawText()+"}";
+  return(503,"");
+ }
+ return normalResponder(req);
+};
+Run(service.ClaimCandy(lostCandyRound,ok=>{if(!ok)throw new Exception("lost candy commit response was not recovered");}));
+if(lostCandyCommits!=1)throw new Exception("candy result was committed more than once");
 UnityWebRequest.Responder=req=>req.url.EndsWith(":runQuery")?(503,""):normalResponder(req);
 Run(service.GetRandomMatch("여",match=>{if(match.success||match.querySucceeded)throw new Exception("failed match query was treated as empty pool");}));
-Console.WriteLine("Love index/registration/prize/profile/count/inventory/play+attempts JSON and replay checks passed");
+Console.WriteLine("Love registration/prize/profile/candy/count/inventory/play JSON and replay checks passed");

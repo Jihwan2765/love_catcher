@@ -179,9 +179,11 @@ Firebase 프로젝트 ID와 Web API Key는 `Assets/Resources/FirebaseConfig.json
   - `totalDolls` (integer): 남은 실물 인형 재고 수량
   - `totalLegendaryDolls` (integer): 남은 레전더리 인형 재고 수량(운영진이 초기값 설정)
   - `totalRevenue` (integer): 현장 총 누적 매출 (원)
-  - `totalRegistrations` (integer): 총 참가 등록 수
+  - `totalRegistrations` (integer): 누적 참가 등록 건수
   - `totalPlays` (integer): 총 플레이 수
-  - `totalSuccesses` (integer): 총 뽑기 성공 수
+  - `totalSuccesses` (integer): 총 뽑기 성공 수(인형·레전드·인스타·사탕 결과 확정 시 각 1회)
+
+인형·레전드 결과는 재고와 성공 수를 한 번에 저장합니다. 인스타 결과는 `MatchResults`의 프로필 선점 영수증과 성공 수를, 사탕 결과는 `GameRounds/love_candy_{roundId}` 영수증과 성공 수를 각각 단일 Firestore `commit`으로 저장합니다. 응답이 유실되면 같은 영수증을 조회해 중복 집계를 막습니다.
 
 ---
 
