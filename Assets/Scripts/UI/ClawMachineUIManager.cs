@@ -37,6 +37,9 @@ namespace ClawMachine.UI
         private VisualElement devModeOverlay;
         private VisualElement devResetStatsConfirmOverlay;
         private VisualElement devSceneReloadConfirmOverlay;
+        private Label devSceneReloadTitle;
+        private Label devSceneReloadDescription;
+        private Label devSceneReloadRetention;
         private VisualElement devDbOverlay;
         private VisualElement devDeleteParticipantConfirmOverlay;
         private VisualElement failRetryOverlay;
@@ -337,6 +340,9 @@ namespace ClawMachine.UI
             devModeOverlay = root.Q<VisualElement>("DevModeOverlay");
             devResetStatsConfirmOverlay = root.Q<VisualElement>("DevResetStatsConfirmOverlay");
             devSceneReloadConfirmOverlay = root.Q<VisualElement>("DevSceneReloadConfirmOverlay");
+            devSceneReloadTitle = root.Q<Label>("DevSceneReloadTitle");
+            devSceneReloadDescription = root.Q<Label>("DevSceneReloadDescription");
+            devSceneReloadRetention = root.Q<Label>("DevSceneReloadRetention");
             devDbOverlay = root.Q<VisualElement>("DevDbOverlay");
             devDeleteParticipantConfirmOverlay = root.Q<VisualElement>("DevDeleteParticipantConfirmOverlay");
             failRetryOverlay = root.Q<VisualElement>("FailRetryOverlay");
@@ -1319,22 +1325,32 @@ namespace ClawMachine.UI
             if (devReloadSceneBtn == null) return;
 
             var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
-            bool isSaving = firebase != null && firebase.IsWriteInProgress;
+            bool isSaving = (firebase != null && firebase.IsWriteInProgress) ||
+                pendingPlayRoundId != null || registrationLookupInFlight ||
+                (ClawMachine.Mechanics.GameFlowManager.Instance != null &&
+                 ClawMachine.Mechanics.GameFlowManager.Instance.IsSessionStarting);
             bool canRecoverSession = HasRecoverableSceneSession();
+            bool hasSession = ClawMachine.Mechanics.GameFlowManager.Instance != null &&
+                ClawMachine.Mechanics.GameFlowManager.Instance.HasRecoverableSession;
+            bool canReload = CanReloadScene();
 
-            devReloadSceneBtn.SetEnabled(!isSaving && canRecoverSession);
-            devSceneReloadConfirmBtn?.SetEnabled(!isSaving && canRecoverSession);
+            devReloadSceneBtn.SetEnabled(canReload);
+            devSceneReloadConfirmBtn?.SetEnabled(canReload);
             if (isSaving)
             {
-                devReloadSceneBtn.text = "Firebase 저장 중...";
+                devReloadSceneBtn.text = "등록 또는 기록 확인 중...";
             }
-            else if (!canRecoverSession)
+            else if (hasSession && !canRecoverSession)
             {
-                devReloadSceneBtn.text = "진행 중인 게임 없음";
+                devReloadSceneBtn.text = "게임 복구 정보 확인 필요";
+            }
+            else if (hasSession)
+            {
+                devReloadSceneBtn.text = "게임 복구 (씬 리로드)";
             }
             else
             {
-                devReloadSceneBtn.text = "게임 복구 (씬 리로드)";
+                devReloadSceneBtn.text = "씬 리로드 (등록 화면으로)";
             }
         }
 
@@ -1348,8 +1364,19 @@ namespace ClawMachine.UI
 
         private void ShowSceneReloadConfirmation()
         {
-            var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
-            if ((firebase != null && firebase.IsWriteInProgress) || !HasRecoverableSceneSession()) return;
+            if (!CanReloadScene()) return;
+
+            bool recoverSession = HasRecoverableSceneSession();
+            if (devSceneReloadTitle != null)
+                devSceneReloadTitle.text = recoverSession ? "⚠ 게임 복구 (씬 리로드)" : "⚠ 씬 리로드";
+            if (devSceneReloadDescription != null)
+                devSceneReloadDescription.text = recoverSession
+                    ? "씬을 다시 불러오면 다음 상태가 초기화됩니다."
+                    : "씬을 다시 불러오고 참가자 등록 화면으로 돌아갑니다.";
+            if (devSceneReloadRetention != null)
+                devSceneReloadRetention.text = recoverSession
+                    ? "참가자 정보와 보유 코인은 유지됩니다.\n초기화를 진행하시겠습니까?"
+                    : "입력 중인 참가자 정보는 초기화됩니다. 보유 코인은 유지됩니다.\n초기화를 진행하시겠습니까?";
 
             if (buttonClickSound != null && ClawMachine.Audio.SoundManager.Instance != null)
                 ClawMachine.Audio.SoundManager.Instance.PlaySFX(buttonClickSound);
@@ -1364,17 +1391,24 @@ namespace ClawMachine.UI
 
         private void ConfirmSceneReload()
         {
-            var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
-            if ((firebase != null && firebase.IsWriteInProgress) || !HasRecoverableSceneSession()) return;
+            if (!CanReloadScene()) return;
 
-            pendingSceneRecovery = new SceneRecoveryData
+            if (HasRecoverableSceneSession())
             {
-                name = registeredName,
-                insta = registeredInsta,
-                bio = registeredBio,
-                gender = registeredGender
-            };
-            hasPendingSceneRecovery = true;
+                pendingSceneRecovery = new SceneRecoveryData
+                {
+                    name = registeredName,
+                    insta = registeredInsta,
+                    bio = registeredBio,
+                    gender = registeredGender
+                };
+                hasPendingSceneRecovery = true;
+            }
+            else
+            {
+                pendingSceneRecovery = default;
+                hasPendingSceneRecovery = false;
+            }
 
             // 보유 코인은 차감하지 않고 현재 값을 확실히 보존합니다.
             PlayerPrefs.SetInt("LoveCatcher_Coins", currentCoins);
@@ -1383,6 +1417,15 @@ namespace ClawMachine.UI
             if (buttonClickSound != null && ClawMachine.Audio.SoundManager.Instance != null)
                 ClawMachine.Audio.SoundManager.Instance.PlaySFX(buttonClickSound);
             UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
+        }
+
+        private bool CanReloadScene()
+        {
+            var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
+            var gameFlow = ClawMachine.Mechanics.GameFlowManager.Instance;
+            if ((firebase != null && firebase.IsWriteInProgress) || pendingPlayRoundId != null ||
+                registrationLookupInFlight || (gameFlow != null && gameFlow.IsSessionStarting)) return false;
+            return gameFlow == null || !gameFlow.HasRecoverableSession || HasRecoverableSceneSession();
         }
 
         private IEnumerator ResumeGameAfterSceneReload()
@@ -1637,10 +1680,18 @@ namespace ClawMachine.UI
                     isPicked = isPickedToggle.value,
                     attempts = data.attempts
                 };
-                StartCoroutine(ClawMachine.Mechanics.FirebaseRESTService.Instance.UpdateParticipantFullData(newData, success => {
+                bool onlyPickedChanged = newData.isPicked != data.isPicked &&
+                    newData.name == data.name && newData.insta == data.insta &&
+                    newData.gender == data.gender && newData.bio == data.bio;
+                var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
+                Action<bool> onSaved = success => {
                     saveBtn.text = success ? "완료!" : "실패";
                     saveBtn.SetEnabled(true);
-                }));
+                    if (success) data = newData;
+                };
+                StartCoroutine(onlyPickedChanged
+                    ? firebase.UpdatePickedStatus(newData.documentId, newData.isPicked, onSaved)
+                    : firebase.UpdateParticipantFullData(newData, onSaved));
             };
 
             deleteBtn.clicked += () => {

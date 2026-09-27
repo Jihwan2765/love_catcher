@@ -51,7 +51,7 @@ UnityWebRequest.Responder=req=>{
  return(200,"{}");
 };
 bool registered=false,prize=false,profile=false,candy=false,inventory=false,played=false;
-Run(service.RegisterPlayer("Name","Candidate","Bio","여",0,ok=>registered=ok));
+Run(service.RegisterPlayer("Name","FreshUser","Bio","여",0,ok=>registered=ok));
 Run(service.CheckInstaIdExists("candidate",exists=>{if(exists!=true)throw new Exception("valid index rejected");}));
 Run(service.CheckInstaIdExists("stale",exists=>{if(exists!=null)throw new Exception("stale index accepted");}));
 if (!FirebaseRESTService.TryNormalizeInstaId(" @Candidate ",out var normalized) || normalized!="candidate" ||
@@ -71,10 +71,23 @@ Run(service.UpdateTotalDolls(3,ok=>inventory=ok));
 service.IncrementPlayCountAndRevenue(500,"candidate",playRound,(ok,_)=>played=ok);
 service.IncrementPlayCountAndRevenue(500,"candidate",playRound,(ok,_)=>{if(!ok)throw new Exception("same play replay failed");});
 service.IncrementPlayCountAndRevenue(1000,"candidate",playRound,(ok,_)=>{if(ok)throw new Exception("mismatched play replay accepted");});
-if(!registered||!prize||!profile||!candy||!inventory||!played||requests.Count!=9)throw new Exception($"flows: {registered} {prize} {profile} {candy} {inventory} {played} {requests.Count}");
-bool checkedProfile=false,checkedCandy=false;
+if(!registered||!prize||!profile||!candy||!inventory||!played||requests.Count!=10)throw new Exception($"flows: {registered} {prize} {profile} {candy} {inventory} {played} {requests.Count}");
+bool checkedRegistration=false,checkedProfile=false,checkedCandy=false;
 foreach(var requestBody in requests)
 {
+ if(requestBody.Contains("ParticipantKeys/insta_freshuser"))
+ {
+  using var registration=JsonDocument.Parse(requestBody);
+  var writes=registration.RootElement.GetProperty("writes");
+  var participant=writes[1].GetProperty("update");
+  if(writes.GetArrayLength()!=3 ||
+     participant.GetProperty("name").GetString()!="projects/test-project/databases/(default)/documents/Participants/insta_freshuser" ||
+     participant.TryGetProperty("updateTime",out _) ||
+     participant.GetProperty("fields").TryGetProperty("instaId",out _) ||
+     participant.GetProperty("fields").GetProperty("insta").GetProperty("stringValue").GetString()!="freshuser")
+   throw new Exception("registration write contains response-only fields or the wrong participant");
+  checkedRegistration=true;
+ }
  if(requestBody.Contains("MatchResults/love_round2"))
  {
   using var match=JsonDocument.Parse(requestBody);
@@ -92,7 +105,7 @@ foreach(var requestBody in requests)
   checkedCandy=true;
  }
 }
-if(!checkedProfile||!checkedCandy)throw new Exception("reward receipts were not written");
+if(!checkedRegistration||!checkedProfile||!checkedCandy)throw new Exception("registration or reward writes were not verified");
 using(var play=JsonDocument.Parse(requests[^1]))
 {
  var writes=play.RootElement.GetProperty("writes");
@@ -100,6 +113,32 @@ using(var play=JsonDocument.Parse(requests[^1]))
     writes[2].GetProperty("transform").GetProperty("fieldTransforms")[0].GetProperty("fieldPath").GetString()!="attempts")
     throw new Exception("participant attempts was not committed with play receipt");
 }
+var updateResponder=UnityWebRequest.Responder;
+string patchUrl=null;
+UnityWebRequest.Responder=req=>{
+ if(req.method=="PATCH")patchUrl=req.url;
+ return updateResponder(req);
+};
+bool pickedSaved=false,participantSaved=false;
+Run(service.UpdatePickedStatus("candidate",true,ok=>pickedSaved=ok));
+using(var picked=JsonDocument.Parse(requests[^1]))
+{
+ if(!pickedSaved || !patchUrl.EndsWith("?updateMask.fieldPaths=isPicked") ||
+    picked.RootElement.GetProperty("fields").GetProperty("isPicked").GetProperty("booleanValue").GetBoolean()!=true)
+  throw new Exception("picked status patch must update only isPicked");
+}
+Run(service.UpdateParticipantFullData(new ParticipantData{documentId="candidate",name="Name",insta="candidate",bio="Bio",gender="여",isPicked=true,attempts=2},ok=>participantSaved=ok));
+using(var participantPatch=JsonDocument.Parse(requests[^1]))
+{
+ var fields=participantPatch.RootElement.GetProperty("fields");
+ if(!participantSaved || !patchUrl.Contains("updateMask.fieldPaths=isPicked") ||
+    participantPatch.RootElement.TryGetProperty("updateTime",out _) ||
+    participantPatch.RootElement.TryGetProperty("name",out _) ||
+    fields.TryGetProperty("instaId",out _) ||
+    fields.GetProperty("isPicked").GetProperty("booleanValue").GetBoolean()!=true)
+  throw new Exception("participant patch contains response-only fields or omits the update mask");
+}
+UnityWebRequest.Responder=updateResponder;
 const string guestRound="00112233445566778899aabbccddeeff";
 string guestReceipt=null;
 int guestCommits=0;

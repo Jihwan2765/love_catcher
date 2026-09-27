@@ -18,6 +18,12 @@ namespace ClawMachine.Mechanics
         [Serializable] private class AggregateItems { public AggregateItem[] items; }
         [Serializable] private class ParticipantKeyFields { public FirestoreStringField participantKey; }
         [Serializable] private class ParticipantKeyDocument { public string updateTime; public ParticipantKeyFields fields; }
+        [Serializable] private class RegistrationFields
+        {
+            public FirestoreStringField name, insta, bio, gender;
+            public FirestoreBoolField isPicked;
+            public FirestoreIntField attempts;
+        }
         [Serializable] private class DeletePrecondition { public string updateTime; }
         [Serializable] private class DeleteWrite { public string delete; public DeletePrecondition currentDocument; }
         [Serializable] private class DeleteCommit { public DeleteWrite[] writes; }
@@ -152,11 +158,11 @@ namespace ClawMachine.Mechanics
             string root = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents";
             string prefix = $"projects/{firebaseProjectId}/databases/(default)/documents/";
             string key = "insta_" + handle;
-            var doc = new FirestoreDocument { fields = new FirestoreFields {
+            var fields = new RegistrationFields {
                 name = new FirestoreStringField(name), insta = new FirestoreStringField(handle),
                 bio = new FirestoreStringField(bio), gender = new FirestoreStringField(gender),
                 isPicked = new FirestoreBoolField(false), attempts = new FirestoreIntField(0)
-            }};
+            };
             for (int attempt = 0; attempt < 5; attempt++)
             {
                 using (var check = UnityWebRequest.Get(root + "/ParticipantKeys/" + key))
@@ -167,16 +173,23 @@ namespace ClawMachine.Mechanics
                         bool indexedParticipantValid = false;
                         yield return ValidateParticipantKey(check.downloadHandler.text, handle,
                             valid => indexedParticipantValid = valid);
+                        if (!indexedParticipantValid)
+                            Debug.LogError("[Firebase] 참가자 등록 실패: 기존 참가자 인덱스와 문서가 일치하지 않습니다.");
                         callback?.Invoke(indexedParticipantValid);
                         yield break;
                     }
-                    if (check.responseCode != 404) { callback?.Invoke(false); yield break; }
+                    if (check.responseCode != 404)
+                    {
+                        LogRegistrationRequestFailure("인덱스 조회", check);
+                        callback?.Invoke(false);
+                        yield break;
+                    }
                 }
                 string payload = "{\"writes\":[{\"update\":{\"name\":\"" + prefix + "ParticipantKeys/" + key +
                     "\",\"fields\":{\"participantKey\":{\"stringValue\":\"" + key +
                     "\"}}},\"currentDocument\":{\"exists\":false}},{\"update\":{\"name\":\"" +
-                    prefix + "Participants/" + key + "\"," + JsonUtility.ToJson(doc).Substring(1) +
-                    ",\"currentDocument\":{\"exists\":false}},{\"transform\":{\"document\":\"" +
+                    prefix + "Participants/" + key + "\",\"fields\":" + JsonUtility.ToJson(fields) +
+                    "},\"currentDocument\":{\"exists\":false}},{\"transform\":{\"document\":\"" +
                     prefix + "GameState/stats\",\"fieldTransforms\":[{\"fieldPath\":\"totalRegistrations\"," +
                     "\"increment\":{\"integerValue\":\"1\"}}]},\"currentDocument\":{\"exists\":true}}]}";
                 BeginWriteOperation();
@@ -188,11 +201,21 @@ namespace ClawMachine.Mechanics
                     yield return SendAuthorized(commit);
                     EndWriteOperation();
                     if (commit.responseCode == 200) { callback?.Invoke(true); yield break; }
+                    LogRegistrationRequestFailure($"commit 시도 {attempt + 1}/5", commit);
                     if (commit.responseCode != 0 && commit.responseCode != 409 && commit.responseCode != 412 && commit.responseCode != 503)
                     { callback?.Invoke(false); yield break; }
                 }
             }
             callback?.Invoke(false);
+        }
+
+        private static void LogRegistrationRequestFailure(string stage, UnityWebRequest request)
+        {
+            // 실패 응답만 기록합니다. 요청 본문과 인증 토큰은 로그에 남기지 않습니다.
+            string response = request.downloadHandler?.text ?? "";
+            if (response.Length > 1000) response = response.Substring(0, 1000) + "...";
+            Debug.LogError($"[Firebase] 참가자 등록 {stage} 실패: HTTP {request.responseCode}, " +
+                $"Unity 오류: {request.error ?? "없음"}, Firestore 응답: {response}");
         }
 
         /// <summary>
@@ -718,7 +741,7 @@ namespace ClawMachine.Mechanics
         }
 
         /// <summary>
-        /// 참가자 데이터를 덮어씌웁니다. (전체 필드 업데이트)
+        /// 참가자의 편집 가능한 필드만 갱신합니다.
         /// </summary>
         public IEnumerator UpdateParticipantFullData(ParticipantData data, Action<bool> callback)
         {
@@ -728,18 +751,16 @@ namespace ClawMachine.Mechanics
                 yield break;
             }
 
-            string url = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/Participants/{data.documentId}";
+            string url = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/Participants/{data.documentId}" +
+                "?updateMask.fieldPaths=name&updateMask.fieldPaths=insta&updateMask.fieldPaths=bio" +
+                "&updateMask.fieldPaths=gender&updateMask.fieldPaths=isPicked&updateMask.fieldPaths=attempts";
 
-            FirestoreDocument doc = new FirestoreDocument();
-            doc.fields = new FirestoreFields();
-            doc.fields.name = new FirestoreStringField(data.name);
-            doc.fields.insta = new FirestoreStringField(data.insta);
-            doc.fields.bio = new FirestoreStringField(data.bio);
-            doc.fields.gender = new FirestoreStringField(data.gender);
-            doc.fields.isPicked = new FirestoreBoolField(data.isPicked);
-            doc.fields.attempts = new FirestoreIntField(data.attempts);
-
-            string jsonPayload = JsonUtility.ToJson(doc);
+            var fields = new RegistrationFields {
+                name = new FirestoreStringField(data.name), insta = new FirestoreStringField(data.insta),
+                bio = new FirestoreStringField(data.bio), gender = new FirestoreStringField(data.gender),
+                isPicked = new FirestoreBoolField(data.isPicked), attempts = new FirestoreIntField(data.attempts)
+            };
+            string jsonPayload = "{\"fields\":" + JsonUtility.ToJson(fields) + "}";
 
             BeginWriteOperation();
             using (UnityWebRequest request = new UnityWebRequest(url, "PATCH"))
@@ -759,7 +780,9 @@ namespace ClawMachine.Mechanics
                 }
                 else
                 {
-                    Debug.LogError($"[Firebase] 데이터 업데이트 실패: {request.error}");
+                    string response = request.downloadHandler?.text ?? "";
+                    if (response.Length > 1000) response = response.Substring(0, 1000) + "...";
+                    Debug.LogError($"[Firebase] 데이터 업데이트 실패: HTTP {request.responseCode}, {request.error}. 응답: {response}");
                     callback?.Invoke(false);
                 }
             }
