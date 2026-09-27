@@ -8,7 +8,7 @@ Windows 빌드 시 `FirebaseConfig.json`의 프로젝트 ID와 Web API Key를 �
 
 운영진은 새 Windows 빌드에서 먼저 스태프 계정으로 로그인한 뒤 게임을 시작합니다. 인스타 ID를 입력한 경우에만 참가자 중복 조회와 등록을 진행합니다. 중복 조회 중에는 입력과 제출을 잠시 막고, 화면을 초기화한 뒤 늦게 도착한 조회 결과는 버립니다. 로그인 실패 메시지가 나오면 표시된 설정·네트워크·HTTP 상태를 기록하고 운영진에게 알려 주세요.
 
-인형뽑기에서 인스타 ID는 선택입니다. 비워두면 게스트로 진행하고 참가자 프로필·인덱스·개인 시도 횟수를 저장하지 않으며 이성 인스타 보상 추첨도 제외합니다. 게스트 플레이의 `GameRounds` 영수증과 전체 플레이·매출 통계는 저장합니다. ID를 입력하면 기존 참가자 중복을 확인하고 재사용합니다. 지급 확정이 불분명하면 하위 상품으로 자동 변경하지 않고 운영진이 처리합니다. 일반·레전드 재고는 사격·리듬과 공유합니다. 기존 데이터가 있다면 `admin_tools/migrate_participant_keys.py`로 정규화 인덱스와 이미 뽑힌 프로필 잠금을 먼저 준비하세요. 결제 금액과 코인 묶음은 변경하지 않았습니다. Windows 빌드와 별도 Firebase 프로젝트에서 네트워크 오류, 버튼 연타, 중복 참가자, 마지막 재고 동시 지급을 반드시 검증하세요.
+인형뽑기에서 인스타 ID는 선택입니다. 비워두면 게스트로 진행하고 참가자 프로필·인덱스·개인 시도 횟수를 저장하지 않으며 이성 인스타 보상 추첨도 제외합니다. 게스트 플레이의 `GameRounds` 영수증과 전체 플레이·매출 통계는 저장합니다. ID를 입력하면 기존 참가자 중복을 확인하고 재사용합니다. 지급 확정이 불분명하면 하위 상품으로 자동 변경하지 않고 운영진이 처리합니다. 일반 인형·레전더리 재고는 사격·리듬과 공유합니다. 기존 데이터가 있다면 `admin_tools/migrate_participant_keys.py`로 정규화 인덱스와 이미 뽑힌 프로필 잠금을 먼저 준비하세요. 결제 금액과 코인 묶음은 변경하지 않았습니다. Windows 빌드와 별도 Firebase 프로젝트에서 네트워크 오류, 버튼 연타, 중복 참가자, 마지막 재고 동시 지급을 반드시 검증하세요.
 
 플레이 기록은 `GameRounds` 영수증·매출/플레이 통계·ID 입력 참가자의 `attempts`를 한 번에 저장합니다. 결과를 확인하지 못하면 다음 플레이를 막고 화면에 회차 ID를 남깁니다. 연결 복구 후 스태프가 `Ctrl+Alt+R`로 **같은 회차**를 재시도합니다. 게임 중 앱이 종료됐다면 로그의 회차 ID와 Firebase 영수증을 운영진이 대조해야 합니다.
 
@@ -177,13 +177,13 @@ Firebase 프로젝트 ID와 Web API Key는 `Assets/Resources/FirebaseConfig.json
   - `attempts` (integer): 누적 시도 횟수
 - `GameState/stats` 문서:
   - `totalDolls` (integer): 남은 실물 인형 재고 수량
-  - `totalLegendaryDolls` (integer): 남은 레전더리 인형 재고 수량(운영진이 초기값 설정)
+  - `totalLegendaryDolls` (integer): 남은 레전더리 재고 수량(운영진이 초기값 설정)
   - `totalRevenue` (integer): 현장 총 누적 매출 (원)
   - `totalRegistrations` (integer): 누적 참가 등록 건수
   - `totalPlays` (integer): 총 플레이 수
-  - `totalSuccesses` (integer): 총 뽑기 성공 수(인형·레전드·인스타·사탕 결과 확정 시 각 1회)
+  - `totalSuccesses` (integer): 총 뽑기 성공 수(인형·레전더리·인스타·사탕 결과 확정 시 각 1회)
 
-인형·레전드 결과는 재고와 성공 수를 한 번에 저장합니다. 인스타 결과는 `MatchResults`의 프로필 선점 영수증과 성공 수를, 사탕 결과는 `GameRounds/love_candy_{roundId}` 영수증과 성공 수를 각각 단일 Firestore `commit`으로 저장합니다. 응답이 유실되면 같은 영수증을 조회해 중복 집계를 막습니다.
+인형·레전더리 결과는 재고와 성공 수를 한 번에 저장합니다. 인스타 결과는 `MatchResults`의 프로필 선점 영수증과 성공 수를, 사탕 결과는 `GameRounds/love_candy_{roundId}` 영수증과 성공 수를 각각 단일 Firestore `commit`으로 저장합니다. 응답이 유실되면 같은 영수증을 조회해 중복 집계를 막습니다.
 관리자 화면에서 참가자를 삭제할 때는 `Participants`, 해당 `ParticipantKeys`, 연결된 `ProfileClaims`를 문서 버전 조건이 있는 단일 `commit`으로 삭제합니다. 기존 빌드에서 참가자 문서만 삭제해 남은 인덱스는 자동으로 제거하지 않으므로 운영 데이터 점검 후 별도로 정리해야 합니다.
 
 ---

@@ -1069,7 +1069,7 @@ namespace ClawMachine.Mechanics
         }
 
         /// <summary>
-        /// GameState/stats 문서에서 레전더리 인형 재고(totalLegendaryDolls)를 가져옵니다.
+        /// GameState/stats 문서에서 레전더리 재고(totalLegendaryDolls)를 가져옵니다.
         /// </summary>
         public IEnumerator GetTotalLegendaryDolls(Action<int> callback)
         {
@@ -1085,7 +1085,7 @@ namespace ClawMachine.Mechanics
                 yield return SendAuthorized(request);
                 if (request.result != UnityWebRequest.Result.Success)
                 {
-                    Debug.LogWarning($"[Firebase] 레전더리 인형 재고 조회 실패: {request.error}");
+                    Debug.LogWarning($"[Firebase] 레전더리 재고 조회 실패: {request.error}");
                     callback?.Invoke(-1);
                     yield break;
                 }
@@ -1112,7 +1112,7 @@ namespace ClawMachine.Mechanics
         }
 
         /// <summary>
-        /// GameState/stats 문서의 레전더리 인형 재고를 별도 필드로 저장합니다.
+        /// GameState/stats 문서의 레전더리 재고를 별도 필드로 저장합니다.
         /// </summary>
         private IEnumerator UnsafeUpdateTotalLegendaryDollsLegacy(int count, Action<bool> callback)
         {
@@ -1135,8 +1135,8 @@ namespace ClawMachine.Mechanics
                 EndWriteOperation();
 
                 bool success = request.result == UnityWebRequest.Result.Success;
-                if (success) Debug.Log($"[Firebase] 남은 레전더리 인형 개수 업데이트 성공: {count}개");
-                else Debug.LogError($"[Firebase] 레전더리 인형 개수 업데이트 실패: {request.error}");
+                if (success) Debug.Log($"[Firebase] 남은 레전더리 개수 업데이트 성공: {count}개");
+                else Debug.LogError($"[Firebase] 레전더리 개수 업데이트 실패: {request.error}");
                 callback?.Invoke(success);
             }
         }

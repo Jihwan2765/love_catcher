@@ -79,7 +79,7 @@ def show_summary():
         print(f"🎮 총 게임 플레이 수: {plays} 회")
         print(f"🏆 총 인형/상품 당첨 수: {successes} 회")
         print(f"🧸 남은 인형 재고: {dolls} 개")
-        print(f"✨ 남은 레전드 인형 재고: {legendary} 개")
+        print(f"✨ 남은 레전더리 재고: {legendary} 개")
         print(f"📝 총 참가자 등록 수: {reg} 명")
     else:
         print("[-] GameState/stats 문서를 불러올 수 없습니다.")

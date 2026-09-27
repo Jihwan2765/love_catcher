@@ -173,7 +173,7 @@
                             </ui:VisualElement>
                         </ui:VisualElement>
                         <ui:VisualElement style="flex-direction: row; justify-content: space-between; align-items: center; margin-top: 8px;">
-                            <ui:Label text="레전더리 인형 개수:" class="form-label" style="margin-bottom: 0;" />
+                            <ui:Label text="레전더리 개수:" class="form-label" style="margin-bottom: 0;" />
                             <ui:VisualElement style="flex-direction: row; align-items: center;">
                                 <ui:TextField name="DevTotalLegendaryDollsInput" value="10" class="input-field" style="width: 80px; margin-right: 8px;" />
                                 <ui:Button name="DevSaveLegendaryDollsBtn" text="저장" class="btn-primary" style="width: 60px; height: 32px; font-size: 12px; margin-bottom: 8px;" />
@@ -325,7 +325,7 @@
                     <ui:Label name="DollCountText" text="0개" class="stat-value" />
                 </ui:VisualElement>
                 <ui:VisualElement class="stat-row">
-                    <ui:Label text="남은 레전더리 인형" class="stat-label" />
+                    <ui:Label text="남은 레전더리" class="stat-label" />
                     <ui:Label name="LegendaryDollCountText" text="0개" class="stat-value" style="color: rgb(255, 215, 0);" />
                 </ui:VisualElement>
             </ui:VisualElement>

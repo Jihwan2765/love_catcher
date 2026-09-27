@@ -2453,7 +2453,10 @@ namespace ClawMachine.UI
                 if (successSubTitle != null)
                     successSubTitle.text = "축하합니다! 귀여운 실물 인형 보상이 당첨되었습니다.";
                 if (dollPickupNotice != null)
+                {
+                    dollPickupNotice.text = "🎁 현장에서 실물 인형도 픽업해가세요! 🎁";
                     dollPickupNotice.style.display = DisplayStyle.Flex;
+                }
             }
             else if (reward == ClawMachine.Mechanics.RewardType.Legendary)
             {
@@ -2461,13 +2464,16 @@ namespace ClawMachine.UI
                     ClawMachine.Audio.SoundManager.Instance.PlaySFX(popupSuccessSound);
 
                 matchedName.text = "레전더리 당첨! 🌟";
-                matchedInsta.text = "희귀한 레전더리 인형";
-                matchedBio.text = "“데스크에서 레전더리 인형을 받아가세요!”";
+                matchedInsta.text = "레전더리";
+                matchedBio.text = "“데스크에서 레전더리를 받아가세요!”";
 
                 if (successSubTitle != null)
-                    successSubTitle.text = "축하합니다! 레전더리 인형 보상이 당첨되었습니다.";
+                    successSubTitle.text = "축하합니다! 레전더리 보상이 당첨되었습니다.";
                 if (dollPickupNotice != null)
+                {
+                    dollPickupNotice.text = "🎁 데스크에서 레전더리를 받아가세요! 🎁";
                     dollPickupNotice.style.display = DisplayStyle.Flex;
+                }
             }
 
             bool hasRemainingPlays = currentCoins > 0;
