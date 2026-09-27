@@ -11,13 +11,16 @@ namespace ClawMachine.Mechanics
     public class FirebaseRESTService : MonoBehaviour
     {
         [Serializable] private class ClaimFields { public FirestoreStringField stockField, targetKey, kind; }
-        [Serializable] private class ClaimReceipt { public ClaimFields fields; }
+        [Serializable] private class ClaimReceipt { public string updateTime; public ClaimFields fields; }
         [Serializable] private class CountFields { public FirestoreIntField count; }
         [Serializable] private class AggregateValue { public CountFields aggregateFields; }
         [Serializable] private class AggregateItem { public AggregateValue result; }
         [Serializable] private class AggregateItems { public AggregateItem[] items; }
         [Serializable] private class ParticipantKeyFields { public FirestoreStringField participantKey; }
-        [Serializable] private class ParticipantKeyDocument { public ParticipantKeyFields fields; }
+        [Serializable] private class ParticipantKeyDocument { public string updateTime; public ParticipantKeyFields fields; }
+        [Serializable] private class DeletePrecondition { public string updateTime; }
+        [Serializable] private class DeleteWrite { public string delete; public DeletePrecondition currentDocument; }
+        [Serializable] private class DeleteCommit { public DeleteWrite[] writes; }
         [Serializable] private class PlayReceiptFields
         {
             public FirestoreStringField kind, participantKey, insta;
@@ -763,34 +766,87 @@ namespace ClawMachine.Mechanics
         }
 
         /// <summary>
-        /// 특정 참가자 문서를 삭제합니다.
+        /// 참가자와 연결 인덱스·프로필 잠금을 한 번에 삭제합니다.
         /// </summary>
         public IEnumerator DeleteParticipant(string documentId, Action<bool> callback)
         {
-            if (string.IsNullOrEmpty(firebaseProjectId) || string.IsNullOrEmpty(documentId))
+            if (string.IsNullOrEmpty(firebaseProjectId) || string.IsNullOrEmpty(documentId) || documentId.Contains("/"))
             {
                 callback?.Invoke(false);
                 yield break;
             }
 
-            string url = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/Participants/{documentId}";
-
-            BeginWriteOperation();
-            using (UnityWebRequest request = new UnityWebRequest(url, "DELETE"))
+            string root = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents";
+            string prefix = $"projects/{firebaseProjectId}/databases/(default)/documents/";
+            FirestoreDocument participant = null;
+            using (var get = UnityWebRequest.Get(root + "/Participants/" + Uri.EscapeDataString(documentId)))
             {
-                yield return SendAuthorized(request);
-                EndWriteOperation();
+                yield return SendAuthorized(get);
+                if (get.responseCode == 200)
+                { try { participant = JsonUtility.FromJson<FirestoreDocument>(get.downloadHandler.text); } catch (Exception) { } }
+            }
+            if (string.IsNullOrEmpty(participant?.updateTime) ||
+                !TryNormalizeInstaId(participant.fields?.insta?.stringValue ?? participant.fields?.instaId?.stringValue, out string handle))
+            { callback?.Invoke(false); yield break; }
 
-                if (request.result == UnityWebRequest.Result.Success)
+            var writes = new List<DeleteWrite> {
+                new DeleteWrite { delete = prefix + "Participants/" + documentId,
+                    currentDocument = new DeletePrecondition { updateTime = participant.updateTime } }
+            };
+            using (var get = UnityWebRequest.Get(root + "/ParticipantKeys/insta_" + handle))
+            {
+                yield return SendAuthorized(get);
+                if (get.responseCode == 200)
                 {
-                    Debug.Log($"[Firebase] 데이터 삭제 성공: {documentId}");
-                    callback?.Invoke(true);
+                    ParticipantKeyDocument index = null;
+                    try { index = JsonUtility.FromJson<ParticipantKeyDocument>(get.downloadHandler.text); } catch (Exception) { }
+                    if (string.IsNullOrEmpty(index?.updateTime) || index.fields?.participantKey?.stringValue != documentId)
+                    { callback?.Invoke(false); yield break; }
+                    writes.Add(new DeleteWrite { delete = prefix + "ParticipantKeys/insta_" + handle,
+                        currentDocument = new DeletePrecondition { updateTime = index.updateTime } });
                 }
-                else
+                else if (get.responseCode != 404) { callback?.Invoke(false); yield break; }
+            }
+            using (var get = UnityWebRequest.Get(root + "/ProfileClaims/insta_" + handle))
+            {
+                yield return SendAuthorized(get);
+                if (get.responseCode == 200)
                 {
-                    Debug.LogError($"[Firebase] 데이터 삭제 실패: {request.error}");
-                    callback?.Invoke(false);
+                    ClaimReceipt claim = null;
+                    try { claim = JsonUtility.FromJson<ClaimReceipt>(get.downloadHandler.text); } catch (Exception) { }
+                    if (string.IsNullOrEmpty(claim?.updateTime) || claim.fields?.targetKey?.stringValue != documentId)
+                    { callback?.Invoke(false); yield break; }
+                    writes.Add(new DeleteWrite { delete = prefix + "ProfileClaims/insta_" + handle,
+                        currentDocument = new DeletePrecondition { updateTime = claim.updateTime } });
                 }
+                else if (get.responseCode != 404) { callback?.Invoke(false); yield break; }
+            }
+
+            string payload = JsonUtility.ToJson(new DeleteCommit { writes = writes.ToArray() });
+            BeginWriteOperation();
+            using (var request = new UnityWebRequest(root + ":commit", "POST"))
+            {
+                request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(payload));
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.SetRequestHeader("Content-Type", "application/json");
+                yield return SendAuthorized(request);
+                bool success = request.responseCode == 200;
+                if (!success)
+                {
+                    // 응답만 유실되었다면 실제 삭제 상태를 확인해 같은 작업을 실패로 표시하지 않습니다.
+                    success = true;
+                    foreach (DeleteWrite write in writes)
+                    {
+                        using (var verify = UnityWebRequest.Get(root + "/" + write.delete.Substring(prefix.Length)))
+                        {
+                            yield return SendAuthorized(verify);
+                            if (verify.responseCode != 404) { success = false; break; }
+                        }
+                    }
+                }
+                EndWriteOperation();
+                if (!success) Debug.LogError($"[Firebase] 참가자 및 연결 문서 삭제 실패: HTTP {request.responseCode}");
+                callback?.Invoke(success);
             }
         }
 
@@ -1339,6 +1395,7 @@ namespace ClawMachine.Mechanics
     [Serializable]
     public class FirestoreDocument
     {
+        public string name, updateTime;
         public FirestoreFields fields;
     }
 
@@ -1347,6 +1404,7 @@ namespace ClawMachine.Mechanics
     {
         public FirestoreStringField name;
         public FirestoreStringField insta;
+        public FirestoreStringField instaId;
         public FirestoreStringField bio;
         public FirestoreStringField gender;
         public FirestoreBoolField isPicked;

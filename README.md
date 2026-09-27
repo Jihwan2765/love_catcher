@@ -184,6 +184,7 @@ Firebase 프로젝트 ID와 Web API Key는 `Assets/Resources/FirebaseConfig.json
   - `totalSuccesses` (integer): 총 뽑기 성공 수(인형·레전드·인스타·사탕 결과 확정 시 각 1회)
 
 인형·레전드 결과는 재고와 성공 수를 한 번에 저장합니다. 인스타 결과는 `MatchResults`의 프로필 선점 영수증과 성공 수를, 사탕 결과는 `GameRounds/love_candy_{roundId}` 영수증과 성공 수를 각각 단일 Firestore `commit`으로 저장합니다. 응답이 유실되면 같은 영수증을 조회해 중복 집계를 막습니다.
+관리자 화면에서 참가자를 삭제할 때는 `Participants`, 해당 `ParticipantKeys`, 연결된 `ProfileClaims`를 문서 버전 조건이 있는 단일 `commit`으로 삭제합니다. 기존 빌드에서 참가자 문서만 삭제해 남은 인덱스는 자동으로 제거하지 않으므로 운영 데이터 점검 후 별도로 정리해야 합니다.
 
 ---
 

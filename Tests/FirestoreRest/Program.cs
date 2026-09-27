@@ -162,4 +162,43 @@ Run(service.ClaimCandy(lostCandyRound,ok=>{if(!ok)throw new Exception("lost cand
 if(lostCandyCommits!=1)throw new Exception("candy result was committed more than once");
 UnityWebRequest.Responder=req=>req.url.EndsWith(":runQuery")?(503,""):normalResponder(req);
 Run(service.GetRandomMatch("여",match=>{if(match.success||match.querySucceeded)throw new Exception("failed match query was treated as empty pool");}));
-Console.WriteLine("Love registration/prize/profile/candy/count/inventory/play JSON and replay checks passed");
+int deleteCommits=0;
+UnityWebRequest.Responder=req=>{
+ if(req.method=="GET"&&req.url.EndsWith("Participants/to_delete"))
+  return(200,"{\"updateTime\":\"2026-01-01T00:00:00Z\",\"fields\":{\"insta\":{\"stringValue\":\"to_delete\"}}}");
+ if(req.method=="GET"&&req.url.EndsWith("ParticipantKeys/insta_to_delete"))
+  return(200,"{\"updateTime\":\"2026-01-01T00:00:01Z\",\"fields\":{\"participantKey\":{\"stringValue\":\"to_delete\"}}}");
+ if(req.method=="GET"&&req.url.EndsWith("ProfileClaims/insta_to_delete"))
+  return(200,"{\"updateTime\":\"2026-01-01T00:00:02Z\",\"fields\":{\"targetKey\":{\"stringValue\":\"to_delete\"}}}");
+ if(req.method=="POST"&&req.url.EndsWith(":commit")&&
+    Encoding.UTF8.GetString(req.uploadHandler.bytes).Contains("Participants/to_delete"))
+ {
+  deleteCommits++;
+  using var json=JsonDocument.Parse(req.uploadHandler.bytes);
+  var writes=json.RootElement.GetProperty("writes");
+  if(writes.GetArrayLength()!=3 ||
+     !writes[0].GetProperty("delete").GetString().EndsWith("Participants/to_delete") ||
+     !writes[1].GetProperty("delete").GetString().EndsWith("ParticipantKeys/insta_to_delete") ||
+     !writes[2].GetProperty("delete").GetString().EndsWith("ProfileClaims/insta_to_delete") ||
+     writes[1].GetProperty("currentDocument").GetProperty("updateTime").GetString()!="2026-01-01T00:00:01Z")
+   throw new Exception("admin deletion must remove participant, index and claim in one guarded commit");
+  return(200,"{}");
+ }
+ return normalResponder(req);
+};
+Run(service.DeleteParticipant("to_delete",ok=>{if(!ok)throw new Exception("linked participant delete failed");}));
+if(deleteCommits!=1)throw new Exception("linked participant delete did not commit once");
+bool lostDeleteApplied=false;
+UnityWebRequest.Responder=req=>{
+ if(req.method=="GET"&&req.url.EndsWith("Participants/lost_delete"))
+  return lostDeleteApplied?(404,""):(200,"{\"updateTime\":\"2026-01-01T00:00:00Z\",\"fields\":{\"insta\":{\"stringValue\":\"lost_delete\"}}}");
+ if(req.method=="GET"&&req.url.EndsWith("ParticipantKeys/insta_lost_delete"))
+  return lostDeleteApplied?(404,""):(200,"{\"updateTime\":\"2026-01-01T00:00:01Z\",\"fields\":{\"participantKey\":{\"stringValue\":\"lost_delete\"}}}");
+ if(req.method=="GET"&&req.url.EndsWith("ProfileClaims/insta_lost_delete"))return(404,"");
+ if(req.method=="POST"&&req.url.EndsWith(":commit")&&
+    Encoding.UTF8.GetString(req.uploadHandler.bytes).Contains("Participants/lost_delete"))
+ { lostDeleteApplied=true; return(503,""); }
+ return normalResponder(req);
+};
+Run(service.DeleteParticipant("lost_delete",ok=>{if(!ok)throw new Exception("lost delete response was not recovered");}));
+Console.WriteLine("Love registration/prize/profile/candy/count/inventory/play/delete JSON and replay checks passed");
