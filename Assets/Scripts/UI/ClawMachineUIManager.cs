@@ -176,6 +176,10 @@ namespace ClawMachine.UI
         private Label devStatPlays;
         private Label devStatSuccesses;
         private Label devStatRevenue;
+        private const float DevStatsRefreshIntervalSeconds = 15f;
+        private float nextDevStatsRefreshAt;
+        private bool devStatsRefreshInFlight;
+        private int devStatsRefreshGeneration;
 
         // Dev Mode Stats Manual Adjustments Fields
         private TextField devTotalRevenueInput;
@@ -277,6 +281,8 @@ namespace ClawMachine.UI
         {
             ++registrationRequestGeneration;
             registrationLookupInFlight = false;
+            ++devStatsRefreshGeneration;
+            devStatsRefreshInFlight = false;
         }
 
         private void Start()
@@ -299,6 +305,7 @@ namespace ClawMachine.UI
         private void OnDestroy()
         {
             ++registrationRequestGeneration;
+            ++devStatsRefreshGeneration;
             if (ArcadeInputManager.Instance != null)
             {
                 ArcadeInputManager.Instance.OnActionDown -= HandleJoystickActionPressed;
@@ -883,7 +890,7 @@ namespace ClawMachine.UI
                         StartCoroutine(SaveSingleStatCoroutine("totalRevenue", newVal, success => {
                             devSaveRevenueBtn.text = success ? "완료!" : "실패";
                             devSaveRevenueBtn.SetEnabled(true);
-                            RefreshDevModeStats();
+                            RefreshDevModeStats(true);
                         }));
                     }
                 };
@@ -900,7 +907,7 @@ namespace ClawMachine.UI
                         StartCoroutine(SaveSingleStatCoroutine("totalRegistrations", newVal, success => {
                             devSaveRegistrationsBtn.text = success ? "완료!" : "실패";
                             devSaveRegistrationsBtn.SetEnabled(true);
-                            RefreshDevModeStats();
+                            RefreshDevModeStats(true);
                         }));
                     }
                 };
@@ -917,7 +924,7 @@ namespace ClawMachine.UI
                         StartCoroutine(SaveSingleStatCoroutine("totalPlays", newVal, success => {
                             devSavePlaysBtn.text = success ? "완료!" : "실패";
                             devSavePlaysBtn.SetEnabled(true);
-                            RefreshDevModeStats();
+                            RefreshDevModeStats(true);
                         }));
                     }
                 };
@@ -934,7 +941,7 @@ namespace ClawMachine.UI
                         StartCoroutine(SaveSingleStatCoroutine("totalSuccesses", newVal, success => {
                             devSaveSuccessesBtn.text = success ? "완료!" : "실패";
                             devSaveSuccessesBtn.SetEnabled(true);
-                            RefreshDevModeStats();
+                            RefreshDevModeStats(true);
                         }));
                     }
                 };
@@ -1207,6 +1214,14 @@ namespace ClawMachine.UI
         private void Update()
         {
             UpdateSceneReloadButtonState();
+
+            if (devModeOverlay != null && devModeOverlay.style.display == DisplayStyle.Flex)
+            {
+                if (BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAdmin)
+                    HideOverlay(devModeOverlay);
+                else if (Time.unscaledTime >= nextDevStatsRefreshAt)
+                    RefreshDevModeStats();
+            }
 
             if (UnityEngine.InputSystem.Keyboard.current != null)
             {
@@ -1736,7 +1751,7 @@ namespace ClawMachine.UI
                     if (rowToDelete != null && rowToDelete.parent != null)
                         rowToDelete.RemoveFromHierarchy();
                     HideDevDeleteParticipantConfirmation();
-                    RefreshDevModeStats();
+                    RefreshDevModeStats(true);
                     return;
                 }
 
@@ -2541,6 +2556,7 @@ namespace ClawMachine.UI
 
                 if (overlay == devModeOverlay)
                 {
+                    ShowDevStatsUnavailable();
                     if (devTotalDollsInput != null && ClawMachine.Mechanics.GameFlowManager.Instance != null)
                     {
                         devTotalDollsInput.value = ClawMachine.Mechanics.GameFlowManager.Instance.totalDolls.ToString();
@@ -2558,7 +2574,7 @@ namespace ClawMachine.UI
                     }
 
                     // Populate stats fields immediately when opening DevModeOverlay
-                    RefreshDevModeStats();
+                    RefreshDevModeStats(true);
                 }
 
                 // UI Navigation Group Setup
@@ -2690,6 +2706,11 @@ namespace ClawMachine.UI
 
         private void HideOverlay(VisualElement overlay)
         {
+            if (overlay == devModeOverlay)
+            {
+                ++devStatsRefreshGeneration;
+                devStatsRefreshInFlight = false;
+            }
             if (overlay != null) overlay.style.display = DisplayStyle.None;
         }
 
@@ -2737,32 +2758,69 @@ namespace ClawMachine.UI
                     success => {
                         devResetStatsBtn.text = success ? "통계 초기화 완료!" : "통계 초기화 실패";
                         devResetStatsBtn.SetEnabled(true);
-                        RefreshDevModeStats();
+                        RefreshDevModeStats(true);
                         Invoke(nameof(RestoreDevResetStatsBtnText), 2f);
                     }));
             }));
         }
 
-        private void RefreshDevModeStats()
+        private void RefreshDevModeStats(bool force = false)
         {
-            if (ClawMachine.Mechanics.FirebaseRESTService.Instance == null) return;
+            if (force)
+            {
+                ++devStatsRefreshGeneration;
+                devStatsRefreshInFlight = false;
+            }
+            if (devStatsRefreshInFlight || devModeOverlay == null ||
+                devModeOverlay.style.display != DisplayStyle.Flex) return;
+            var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
+            if (firebase == null || BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAdmin)
+            {
+                ShowDevStatsUnavailable();
+                nextDevStatsRefreshAt = Time.unscaledTime + DevStatsRefreshIntervalSeconds;
+                return;
+            }
 
-            StartCoroutine(ClawMachine.Mechanics.FirebaseRESTService.Instance.GetGameStats(stats => {
+            int generation = ++devStatsRefreshGeneration;
+            devStatsRefreshInFlight = true;
+            nextDevStatsRefreshAt = Time.unscaledTime + DevStatsRefreshIntervalSeconds;
+            StartCoroutine(firebase.GetGameStats(stats => {
+                if (generation != devStatsRefreshGeneration) return;
+                devStatsRefreshInFlight = false;
+                nextDevStatsRefreshAt = Time.unscaledTime + DevStatsRefreshIntervalSeconds;
+                if (devModeOverlay == null || devModeOverlay.style.display != DisplayStyle.Flex ||
+                    BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAdmin) return;
+                if (stats.totalRegistrations < 0 || stats.totalPlays < 0 ||
+                    stats.totalSuccesses < 0 || stats.totalRevenue < 0)
+                {
+                    ShowDevStatsUnavailable();
+                    return;
+                }
+
+                if (devStatRegistrations != null) devStatRegistrations.text = $"누적 인스타 등록 건수: {stats.totalRegistrations}건";
                 if (devStatPlays != null) devStatPlays.text = $"총 플레이 횟수: {stats.totalPlays}회";
                 if (devStatSuccesses != null) devStatSuccesses.text = $"총 성공(뽑기) 횟수: {stats.totalSuccesses}회";
                 if (devStatRevenue != null) devStatRevenue.text = $"총 누적 수입: {stats.totalRevenue:N0}원";
 
+                if (devTotalRegistrationsInput != null && !IsUserTyping()) devTotalRegistrationsInput.value = stats.totalRegistrations.ToString();
                 if (devTotalRevenueInput != null && !IsUserTyping()) devTotalRevenueInput.value = stats.totalRevenue.ToString();
                 if (devTotalPlaysInput != null && !IsUserTyping()) devTotalPlaysInput.value = stats.totalPlays.ToString();
                 if (devTotalSuccessesInput != null && !IsUserTyping()) devTotalSuccessesInput.value = stats.totalSuccesses.ToString();
-
-                // Firebase의 실제 Participants 문서 개수를 조회하여 '등록된 총 인스타 ID 수'로 갱신
-                StartCoroutine(ClawMachine.Mechanics.FirebaseRESTService.Instance.GetAllParticipants(list => {
-                    int actualCount = (list != null) ? list.Count : stats.totalRegistrations;
-                    if (devStatRegistrations != null) devStatRegistrations.text = $"등록된 총 인스타 ID 수: {actualCount}명";
-                    if (devTotalRegistrationsInput != null && !IsUserTyping()) devTotalRegistrationsInput.value = actualCount.ToString();
-                }));
             }));
+        }
+
+        private void ShowDevStatsUnavailable()
+        {
+            if (devStatRegistrations != null) devStatRegistrations.text = "누적 인스타 등록 건수: 확인 필요";
+            if (devStatPlays != null) devStatPlays.text = "총 플레이 횟수: 확인 필요";
+            if (devStatSuccesses != null) devStatSuccesses.text = "총 성공(뽑기) 횟수: 확인 필요";
+            if (devStatRevenue != null) devStatRevenue.text = "총 누적 수입: 확인 필요";
+        }
+
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            if (hasFocus && devModeOverlay != null && devModeOverlay.style.display == DisplayStyle.Flex)
+                RefreshDevModeStats(true);
         }
 
         private void RestoreDevResetStatsBtnText()
