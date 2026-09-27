@@ -15,11 +15,13 @@ typeof(BoothStaffAuth).GetField("tokenExpiresAt",BindingFlags.Instance|BindingFl
 var service=FirebaseRESTService.Instance;
 service.firebaseProjectId="test-project";
 var requests=new List<string>();
+int allRequests=0;
 const string playRound="0123456789abcdef0123456789abcdef";
 string playReceipt=null;
 var stats="{\"updateTime\":\"2026-01-01T00:00:00Z\",\"fields\":{\"totalDolls\":{\"integerValue\":\"1\"},\"totalLegendaryDolls\":{\"integerValue\":\"1\"},\"totalPlays\":{\"integerValue\":\"0\"},\"totalRevenue\":{\"integerValue\":\"0\"},\"totalRegistrations\":{\"integerValue\":\"0\"},\"totalSuccesses\":{\"integerValue\":\"0\"}}}";
 var person="{\"name\":\"projects/test-project/databases/(default)/documents/Participants/candidate\",\"updateTime\":\"2026-01-01T00:00:00Z\",\"fields\":{\"insta\":{\"stringValue\":\"candidate\"},\"isPicked\":{\"booleanValue\":false}}}";
 UnityWebRequest.Responder=req=>{
+ allRequests++;
  if(req.method=="GET"&&req.url.EndsWith("GameState/stats"))return(200,stats);
  if(req.method=="GET"&&req.url.EndsWith("GameRounds/love_"+playRound)&&playReceipt!=null)return(200,playReceipt);
  if(req.method=="GET"&&req.url.EndsWith("ParticipantKeys/insta_candidate"))return(200,"{\"fields\":{\"participantKey\":{\"stringValue\":\"candidate\"}}}");
@@ -46,6 +48,14 @@ bool registered=false,prize=false,profile=false,inventory=false,played=false;
 Run(service.RegisterPlayer("Name","Candidate","Bio","여",0,ok=>registered=ok));
 Run(service.CheckInstaIdExists("candidate",exists=>{if(exists!=true)throw new Exception("valid index rejected");}));
 Run(service.CheckInstaIdExists("stale",exists=>{if(exists!=null)throw new Exception("stale index accepted");}));
+if (!FirebaseRESTService.TryNormalizeInstaId(" @Candidate ",out var normalized) || normalized!="candidate" ||
+    FirebaseRESTService.TryNormalizeInstaId("bad handle!",out _))
+    throw new Exception("Instagram handle validation changed");
+int beforeUnauthenticatedLookup=allRequests;
+typeof(BoothStaffAuth).GetField("idToken",BindingFlags.Instance|BindingFlags.NonPublic).SetValue(auth,null);
+Run(service.CheckInstaIdExists("candidate",exists=>{if(exists!=null)throw new Exception("unauthenticated lookup accepted");}));
+if(allRequests!=beforeUnauthenticatedLookup)throw new Exception("unauthenticated lookup sent a request");
+typeof(BoothStaffAuth).GetField("idToken",BindingFlags.Instance|BindingFlags.NonPublic).SetValue(auth,"x."+claims+".x");
 Run(service.ClaimPrize("round1",false,ok=>prize=ok)); Run(service.CheckInstaIdExists("fresh",exists=>{if(exists!=false)throw new Exception("bad duplicate check");})); Run(service.GetRandomMatch("여",match=>{if(match.success)throw new Exception("unexpected match");}));
 Run(service.ClaimProfile("round2",new MatchedProfileResponse{documentId="candidate",insta="candidate"},ok=>profile=ok));
 Run(service.GetUnpickedCounts((male,female)=>{if(male!=2||female!=2)throw new Exception("bad aggregation: "+male+" "+female);}));

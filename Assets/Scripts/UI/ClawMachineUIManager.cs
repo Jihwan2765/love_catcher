@@ -269,7 +269,14 @@ namespace ClawMachine.UI
             if (uiDocument != null)
             {
                 InitializeUIElements();
+                SetRegistrationLookupBusy(false);
             }
+        }
+
+        private void OnDisable()
+        {
+            ++registrationRequestGeneration;
+            registrationLookupInFlight = false;
         }
 
         private void Start()
@@ -291,6 +298,7 @@ namespace ClawMachine.UI
 
         private void OnDestroy()
         {
+            ++registrationRequestGeneration;
             if (ArcadeInputManager.Instance != null)
             {
                 ArcadeInputManager.Instance.OnActionDown -= HandleJoystickActionPressed;
@@ -1023,9 +1031,35 @@ namespace ClawMachine.UI
         }
 
         private bool isDuplicateRegistration = false;
+        private bool registrationLookupInFlight;
+        private int registrationRequestGeneration;
+
+        private void SetRegistrationLookupBusy(bool busy)
+        {
+            registrationLookupInFlight = busy;
+            inputName?.SetEnabled(!busy);
+            inputInsta?.SetEnabled(!busy);
+            inputBio?.SetEnabled(!busy);
+            genderBtnMale?.SetEnabled(!busy);
+            genderBtnFemale?.SetEnabled(!busy);
+            registerSubmitBtn?.SetEnabled(!busy);
+        }
 
         private void SubmitRegistration()
         {
+            if (registrationLookupInFlight) return;
+            if (BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAuthenticated)
+            {
+                ShowRegistrationError("스태프가 Firebase에 로그인한 뒤 시작해 주세요.");
+                return;
+            }
+            var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
+            if (firebase == null || string.IsNullOrWhiteSpace(firebase.firebaseProjectId))
+            {
+                ShowRegistrationError("Firebase 프로젝트 설정을 확인해 주세요.");
+                return;
+            }
+
             // 포커스 해제하여 커서 인덱스 예외(ArgumentOutOfRangeException) 방지
             inputName?.Blur();
             inputInsta?.Blur();
@@ -1053,28 +1087,36 @@ namespace ClawMachine.UI
                 Debug.LogWarning("필수 입력 항목 누락.");
                 return;
             }
+            if (!ClawMachine.Mechanics.FirebaseRESTService.TryNormalizeInstaId(registeredInsta, out _))
+            {
+                ShowRegistrationError("인스타 ID는 영문, 숫자, 마침표, 밑줄로 30자 이내로 입력해 주세요.");
+                return;
+            }
+            if (currentCoins + pendingCoinsToCharge <= 0)
+            {
+                ShowRegistrationError("코인을 먼저 충전해주세요! (우측 카드 이용)");
+                return;
+            }
 
             if (registerWarningText != null) registerWarningText.style.display = DisplayStyle.None;
-
-            if (!string.IsNullOrWhiteSpace(registeredInsta) && ClawMachine.Mechanics.FirebaseRESTService.Instance != null)
-            {
-                if (registerSubmitBtn != null) registerSubmitBtn.SetEnabled(false);
-                
-                StartCoroutine(ClawMachine.Mechanics.FirebaseRESTService.Instance.CheckInstaIdExists(registeredInsta, (exists) => {
-                    if (registerSubmitBtn != null) registerSubmitBtn.SetEnabled(true);
-                    if (!exists.HasValue)
-                    {
-                        ShowRegistrationError("참가자 중복 확인에 실패했습니다. 연결을 확인하고 다시 눌러 주세요.");
-                        return;
-                    }
-                    isDuplicateRegistration = exists.Value;
-                    CheckCoinAndProceed();
-                }));
-            }
-            else
-            {
+            int generation = ++registrationRequestGeneration;
+            SetRegistrationLookupBusy(true);
+            StartCoroutine(firebase.CheckInstaIdExists(registeredInsta, exists => {
+                if (generation != registrationRequestGeneration) return;
+                SetRegistrationLookupBusy(false);
+                if (BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAuthenticated)
+                {
+                    ShowRegistrationError("스태프 로그인이 해제됐습니다. 다시 로그인한 뒤 눌러 주세요.");
+                    return;
+                }
+                if (!exists.HasValue)
+                {
+                    ShowRegistrationError("참가자 중복 확인에 실패했습니다. 연결을 확인하고 다시 눌러 주세요.");
+                    return;
+                }
+                isDuplicateRegistration = exists.Value;
                 CheckCoinAndProceed();
-            }
+            }));
         }
 
         private void CheckCoinAndProceed()
@@ -1128,6 +1170,8 @@ namespace ClawMachine.UI
 
         private void ResetToRegistration()
         {
+            ++registrationRequestGeneration;
+            SetRegistrationLookupBusy(false);
             // 한 참가자의 세션이 끝나고 개인정보 입력 화면으로 돌아갈 때 HUD를 숨깁니다.
             SetTopBarVisible(false);
 

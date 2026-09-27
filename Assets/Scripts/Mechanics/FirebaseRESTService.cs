@@ -132,13 +132,19 @@ namespace ClawMachine.Mechanics
         }
 
         /// <summary>
-        /// 참가자 정보를 Firestore에 신규 등록합니다.
+        /// 인스타 아이디를 참가자 문서와 중복 조회에 사용할 표준 형식으로 정규화합니다.
         /// </summary>
+        public static bool TryNormalizeInstaId(string input, out string handle)
+        {
+            handle = (input ?? "").Trim().TrimStart('@').ToLowerInvariant();
+            return handle.Length > 0 && handle.Length <= 30 &&
+                System.Text.RegularExpressions.Regex.IsMatch(handle, "^[a-z0-9._]+$");
+        }
+
+        /// <summary>참가자 정보를 Firestore에 신규 등록합니다.</summary>
         public IEnumerator RegisterPlayer(string name, string insta, string bio, string gender, int attempts, Action<bool> callback)
         {
-            string handle = (insta ?? "").Trim().TrimStart('@').ToLowerInvariant();
-            if (string.IsNullOrEmpty(firebaseProjectId) || handle.Length == 0 || handle.Length > 30 ||
-                !System.Text.RegularExpressions.Regex.IsMatch(handle, "^[a-z0-9._]+$"))
+            if (string.IsNullOrEmpty(firebaseProjectId) || !TryNormalizeInstaId(insta, out string handle))
             { callback?.Invoke(false); yield break; }
             string root = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents";
             string prefix = $"projects/{firebaseProjectId}/databases/(default)/documents/";
@@ -191,16 +197,16 @@ namespace ClawMachine.Mechanics
         /// </summary>
         public IEnumerator CheckInstaIdExists(string instaId, Action<bool?> callback)
         {
-            if (string.IsNullOrEmpty(firebaseProjectId))
+            if (string.IsNullOrEmpty(firebaseProjectId) ||
+                BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAuthenticated)
             {
                 callback?.Invoke(null);
                 yield break;
             }
 
-            instaId = (instaId ?? "").Trim().TrimStart('@').ToLowerInvariant();
-            if (instaId.Length == 0 || instaId.Length > 30 ||
-                !System.Text.RegularExpressions.Regex.IsMatch(instaId, "^[a-z0-9._]+$"))
+            if (!TryNormalizeInstaId(instaId, out string normalizedInstaId))
             { callback?.Invoke(null); yield break; }
+            instaId = normalizedInstaId;
             string indexUrl = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/ParticipantKeys/insta_{instaId}";
             using (var indexed = UnityWebRequest.Get(indexUrl))
             {
