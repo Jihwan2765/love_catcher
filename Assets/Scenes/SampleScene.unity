@@ -1948,6 +1948,7 @@ GameObject:
   - component: {fileID: 439195965}
   - component: {fileID: 439195964}
   - component: {fileID: 439195963}
+  - component: {fileID: 439195970}
   m_Layer: 0
   m_Name: Claw Root
   m_TagString: Untagged
@@ -2129,6 +2130,37 @@ Transform:
   - {fileID: 14071706}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &439195970
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 439195962}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c6c1199c63b94d5e9271fd0bf8ce4a78, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ClawMachine.Mechanics.ClawAimGuide
+  controller: {fileID: 439195964}
+  rayOrigin: {fileID: 0}
+  guideMaterial: {fileID: 2100000, guid: 7f3659265ba94338ac6e1fdb270e967a, type: 2}
+  raycastMask:
+    serializedVersion: 2
+    m_Bits: 119
+  maxDistance: 20
+  originClearance: 0.03
+  surfaceOffset: 0.015
+  lineWidth: 0.025
+  markerRadius: 0.22
+  markerSegments: 48
+  floorColor: {r: 0.1, g: 1, b: 0.9, a: 0.72}
+  dollColor: {r: 1, g: 0.82, b: 0.1, a: 0.9}
+  targetOutlineMaterial: {fileID: 2100000, guid: 36c181f07a6e4657a94fb7b6a73b0c7d, type: 2}
+  targetGlowColor: {r: 1, g: 0.65, b: 0.08, a: 1}
+  targetGlowPulseSpeed: 0
+  targetGlowMin: 0.35
+  targetGlowMax: 0.35
 --- !u!1 &447298780
 GameObject:
   m_ObjectHideFlags: 0
