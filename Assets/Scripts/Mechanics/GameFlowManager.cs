@@ -312,6 +312,7 @@ namespace ClawMachine.Mechanics
             timeRemaining = sessionTimeLimit;
             isDollScoredThisAttempt = false;
             scoredDollsThisAttempt.Clear();
+            CleanupGoalDollsBeforeAttempt();
             isGameActive = true;
 
             // 개인정보 입력 완료부터 다음 참가자 입력 화면으로 돌아갈 때까지 HUD를 유지합니다.
@@ -346,6 +347,7 @@ namespace ClawMachine.Mechanics
             sessionAttempts = 1;
             isDollScoredThisAttempt = false;
             scoredDollsThisAttempt.Clear();
+            CleanupGoalDollsBeforeAttempt();
             timeRemaining = sessionTimeLimit;
             isGameActive = true;
             ClawMachineUIManager.Instance.SetTopBarVisible(true);
@@ -394,6 +396,43 @@ namespace ClawMachine.Mechanics
             {
                 isDollScoredThisAttempt = true;
                 StartCoroutine(ProcessSuccessSequence());
+            }
+        }
+
+        private void CleanupGoalDollsBeforeAttempt()
+        {
+#if UNITY_2023_1_OR_NEWER
+            GoalBoxTrigger goalBox = FindFirstObjectByType<GoalBoxTrigger>();
+#else
+            GoalBoxTrigger goalBox = FindObjectOfType<GoalBoxTrigger>();
+#endif
+            if (goalBox == null)
+            {
+                Debug.LogWarning("[Goal 검사] GoalBoxTrigger를 찾을 수 없어 잔존 하트 검사를 건너뜁니다.");
+                return;
+            }
+
+            List<GameObject> remainingDolls = goalBox.GetDollsInsideGoal();
+            int cleanedCount = 0;
+            foreach (var doll in remainingDolls)
+            {
+                if (doll == null) continue;
+
+                doll.SetActive(false);
+                if (DollSpawner.Instance != null)
+                {
+                    DollSpawner.Instance.RefillDoll(doll);
+                }
+                else
+                {
+                    Destroy(doll);
+                }
+                cleanedCount++;
+            }
+
+            if (cleanedCount > 0)
+            {
+                Debug.Log($"[Goal 잔존 정리] 다음 시도 전에 하트 {cleanedCount}개를 회수하고 리필했습니다.");
             }
         }
 
@@ -651,6 +690,7 @@ namespace ClawMachine.Mechanics
             totalAttempts++;
             isDollScoredThisAttempt = false;
             scoredDollsThisAttempt.Clear();
+            CleanupGoalDollsBeforeAttempt();
             
             // 시간 다시 충전
             timeRemaining = sessionTimeLimit;
