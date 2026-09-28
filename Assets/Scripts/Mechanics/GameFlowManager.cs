@@ -36,25 +36,25 @@ namespace ClawMachine.Mechanics
         
         [Header("Male Specific Probabilities (%)")]
         [Range(0f, 100f)] public float maleProbLegendary = 1f;
-        [Range(0f, 100f)] public float maleProbDoll = 35f;
-        [Range(0f, 100f)] public float maleProbInstagram = 44f;
-        [Range(0f, 100f)] public float maleProbCandy = 20f;
+        [Range(0f, 100f)] public float maleProbDoll = 14f;
+        [Range(0f, 100f)] public float maleProbInstagram = 50f;
+        [Range(0f, 100f)] public float maleProbCandy = 35f;
 
         [Header("Female Specific Probabilities (%)")]
         [Range(0f, 100f)] public float femaleProbLegendary = 1f;
-        [Range(0f, 100f)] public float femaleProbDoll = 44f;
-        [Range(0f, 100f)] public float femaleProbInstagram = 35f;
-        [Range(0f, 100f)] public float femaleProbCandy = 20f;
+        [Range(0f, 100f)] public float femaleProbDoll = 55f;
+        [Range(0f, 100f)] public float femaleProbInstagram = 14f;
+        [Range(0f, 100f)] public float femaleProbCandy = 30f;
 
         [Header("Male Probabilities Without Instagram (%)")]
         [Range(0f, 100f)] public float maleNoInstaProbLegendary = 1f;
-        [Range(0f, 100f)] public float maleNoInstaProbDoll = 35f;
-        [Range(0f, 100f)] public float maleNoInstaProbCandy = 64f;
+        [Range(0f, 100f)] public float maleNoInstaProbDoll = 29f;
+        [Range(0f, 100f)] public float maleNoInstaProbCandy = 70f;
 
         [Header("Female Probabilities Without Instagram (%)")]
         [Range(0f, 100f)] public float femaleNoInstaProbLegendary = 1f;
-        [Range(0f, 100f)] public float femaleNoInstaProbDoll = 35f;
-        [Range(0f, 100f)] public float femaleNoInstaProbCandy = 64f;
+        [Range(0f, 100f)] public float femaleNoInstaProbDoll = 55f;
+        [Range(0f, 100f)] public float femaleNoInstaProbCandy = 44f;
         
         [Header("Mock Database (Firebase 연동 대기용)")]
         [Tooltip("남성 참가자 목록 (여성이 플레이할 때 매칭 대상)")]
@@ -97,19 +97,19 @@ namespace ClawMachine.Mechanics
         public bool IsSessionStarting => sessionStarting;
 
         private const float DefaultMaleLegendary = 1f;
-        private const float DefaultMaleDoll = 35f;
-        private const float DefaultMaleInstagram = 44f;
-        private const float DefaultMaleCandy = 20f;
+        private const float DefaultMaleDoll = 14f;
+        private const float DefaultMaleInstagram = 50f;
+        private const float DefaultMaleCandy = 35f;
         private const float DefaultFemaleLegendary = 1f;
-        private const float DefaultFemaleDoll = 44f;
-        private const float DefaultFemaleInstagram = 35f;
-        private const float DefaultFemaleCandy = 20f;
+        private const float DefaultFemaleDoll = 55f;
+        private const float DefaultFemaleInstagram = 14f;
+        private const float DefaultFemaleCandy = 30f;
         private const float DefaultMaleNoInstaLegendary = 1f;
-        private const float DefaultMaleNoInstaDoll = 35f;
-        private const float DefaultMaleNoInstaCandy = 64f;
+        private const float DefaultMaleNoInstaDoll = 29f;
+        private const float DefaultMaleNoInstaCandy = 70f;
         private const float DefaultFemaleNoInstaLegendary = 1f;
-        private const float DefaultFemaleNoInstaDoll = 35f;
-        private const float DefaultFemaleNoInstaCandy = 64f;
+        private const float DefaultFemaleNoInstaDoll = 55f;
+        private const float DefaultFemaleNoInstaCandy = 44f;
 
         private void Awake()
         {

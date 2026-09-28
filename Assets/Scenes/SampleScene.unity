@@ -1977,8 +1977,8 @@ MonoBehaviour:
   - {fileID: 1405388}
   closeVelocity: 100
   openVelocity: -100
-  gripForce: 50
-  baseGripForce: 50
+  gripForce: 25
+  baseGripForce: 25
 --- !u!114 &439195964
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5700,19 +5700,19 @@ MonoBehaviour:
   sessionTimeLimit: 60
   pityTriggerCount: 5
   maleProbLegendary: 1
-  maleProbDoll: 35
-  maleProbInstagram: 44
-  maleProbCandy: 20
+  maleProbDoll: 14
+  maleProbInstagram: 50
+  maleProbCandy: 35
   femaleProbLegendary: 1
-  femaleProbDoll: 44
-  femaleProbInstagram: 35
-  femaleProbCandy: 20
+  femaleProbDoll: 55
+  femaleProbInstagram: 14
+  femaleProbCandy: 30
   maleNoInstaProbLegendary: 1
-  maleNoInstaProbDoll: 35
-  maleNoInstaProbCandy: 64
+  maleNoInstaProbDoll: 29
+  maleNoInstaProbCandy: 70
   femaleNoInstaProbLegendary: 1
-  femaleNoInstaProbDoll: 35
-  femaleNoInstaProbCandy: 64
+  femaleNoInstaProbDoll: 55
+  femaleNoInstaProbCandy: 44
   maleProfiles: []
   femaleProfiles: []
   totalInstaCards: 20

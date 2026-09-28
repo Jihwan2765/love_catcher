@@ -5,6 +5,8 @@ namespace ClawMachine.Mechanics
 {
     public class ClawGripper : MonoBehaviour
     {
+        private const float DefaultGripForce = 25f;
+
         [Header("Claw Joints")]
         [Tooltip("인형을 잡는 집게 발들의 HingeJoint 배열")]
         public HingeJoint[] clawJoints;
@@ -15,15 +17,15 @@ namespace ClawMachine.Mechanics
         [Tooltip("집게를 열 때의 속도")]
         public float openVelocity = -100f;
         [Tooltip("악력 (모터가 가하는 힘). 기획에 따라 재시도마다 이 값을 올려주면 천장 버프가 됩니다.")]
-        public float gripForce = 15f;
+        public float gripForce = DefaultGripForce;
 
-        public float baseGripForce = 15f;
+        public float baseGripForce = DefaultGripForce;
 
         private void Awake()
         {
-            // 인스펙터 직렬화된 값(예: 50)이 코드 기본값(15)을 덮어씌우는 현상을 방지하기 위해 Awake에서 강제 주입
-            gripForce = 15f;
-            baseGripForce = 15f;
+            // 인스펙터 직렬화 값과 관계없이 기본 악력을 일관되게 적용합니다.
+            gripForce = DefaultGripForce;
+            baseGripForce = DefaultGripForce;
         }
 
         private void Start()
