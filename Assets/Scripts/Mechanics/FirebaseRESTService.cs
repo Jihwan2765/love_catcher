@@ -85,6 +85,20 @@ namespace ClawMachine.Mechanics
 
         private int activeWriteOperationCount;
         public bool IsWriteInProgress => activeWriteOperationCount > 0;
+        public bool IsReadOnlyMode { get; private set; }
+
+        /// <summary>
+        /// 테스트 세션 동안 Firestore 조회만 허용합니다. runQuery 계열 POST는 조회이므로 허용하고,
+        /// commit/PATCH/DELETE 등 데이터 변경 요청은 SendAuthorized에서 최종 차단합니다.
+        /// </summary>
+        public void SetReadOnlyMode(bool enabled)
+        {
+            if (IsReadOnlyMode == enabled) return;
+            IsReadOnlyMode = enabled;
+            Debug.Log(enabled
+                ? "[Firebase] 테스트 세션 읽기 전용 모드가 활성화되었습니다."
+                : "[Firebase] 테스트 세션 읽기 전용 모드가 해제되었습니다.");
+        }
 
         private void BeginWriteOperation()
         {
@@ -98,6 +112,12 @@ namespace ClawMachine.Mechanics
 
         private IEnumerator SendAuthorized(UnityWebRequest request)
         {
+            if (IsReadOnlyMode && IsFirestoreWriteRequest(request))
+            {
+                Debug.LogError($"[Firebase] 테스트 세션에서 쓰기 요청을 차단했습니다: {request.method} {request.url}");
+                yield break;
+            }
+
             string token = null;
             if (BoothStaffAuth.Instance == null) yield break;
             yield return BoothStaffAuth.Instance.EnsureIdToken(value => token = value);
@@ -109,6 +129,26 @@ namespace ClawMachine.Mechanics
             request.timeout = 15;
             request.SetRequestHeader("Authorization", "Bearer " + token);
             yield return request.SendWebRequest();
+        }
+
+        private static bool IsFirestoreWriteRequest(UnityWebRequest request)
+        {
+            if (request == null || string.IsNullOrEmpty(request.url) ||
+                request.url.IndexOf("firestore.googleapis.com", StringComparison.OrdinalIgnoreCase) < 0)
+                return false;
+
+            string method = request.method ?? "";
+            if (string.Equals(method, "GET", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(method, "HEAD", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            // Firestore REST 조회 API는 HTTP POST를 사용하지만 문서를 변경하지 않습니다.
+            if (string.Equals(method, "POST", StringComparison.OrdinalIgnoreCase) &&
+                (request.url.EndsWith(":runQuery", StringComparison.OrdinalIgnoreCase) ||
+                 request.url.EndsWith(":runAggregationQuery", StringComparison.OrdinalIgnoreCase)))
+                return false;
+
+            return true;
         }
 
         private void Awake()

@@ -426,4 +426,26 @@ Run(service.ClaimProfile(lockedRound,new MatchedProfileResponse{documentId="cand
  null,result=>claimResult=result));
 if(claimResult!=ProfileClaimResult.CandidateUnavailable || concurrentClaimCommits!=1 || concurrentClaimReads!=2)
  throw new Exception("a concurrent profile claim was not classified for another candidate retry");
+
+int readOnlyMutationRequests=0,readOnlyQueryRequests=0;
+UnityWebRequest.Responder=req=>{
+ if(req.method=="POST"&&req.url.EndsWith(":runQuery"))
+ { readOnlyQueryRequests++; return(200,"[]"); }
+ if(req.method!="GET")
+ { readOnlyMutationRequests++; return(200,"{}"); }
+ if(req.url.EndsWith("GameState/stats"))return(200,stats);
+ return(404,"");
+};
+service.SetReadOnlyMode(true);
+bool readOnlyRegistration=true,readOnlyCandy=true,readOnlyPlay=true;
+MatchedProfileResponse readOnlyMatch=default;
+Run(service.RegisterPlayer("Test","readonly_user","Bio","남",0,ok=>readOnlyRegistration=ok));
+Run(service.ClaimCandy("11111111111111111111111111111111",ok=>readOnlyCandy=ok));
+service.IncrementPlayCountAndRevenue(500,"","22222222222222222222222222222222",
+ (ok,_)=>readOnlyPlay=ok);
+Run(service.GetRandomMatch("여",match=>readOnlyMatch=match));
+service.SetReadOnlyMode(false);
+if(readOnlyRegistration||readOnlyCandy||readOnlyPlay||readOnlyMutationRequests!=0 ||
+   readOnlyQueryRequests!=1||readOnlyMatch.success||!readOnlyMatch.querySucceeded)
+ throw new Exception("read-only test session sent a Firestore mutation or blocked a read query");
 Console.WriteLine("Love registration/prize/profile/candy/count/inventory/play/delete/orphan recovery/profile reset checks passed");

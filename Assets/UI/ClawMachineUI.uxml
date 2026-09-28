@@ -131,6 +131,13 @@
                         <ui:Label name="DevStatRevenue" text="총 누적 수입: 0원" class="form-label" style="color: rgb(255, 215, 0); font-size: 15px; font-weight: bold; margin-bottom: 0;" />
                         <ui:Button name="DevResetStatsBtn" text="통계 데이터 초기화 (0으로 리셋)" class="btn-secondary" style="height: 36px; margin-top: 12px; font-size: 13px; border-color: rgb(255, 59, 48); font-weight: bold; color: rgb(255, 59, 48);" />
                     </ui:VisualElement>
+                    <ui:VisualElement class="form-field" style="margin-top: 16px; background-color: rgba(255, 126, 0, 0.08); padding: 12px; border-radius: 12px; border-width: 1px; border-color: rgba(255, 126, 0, 0.45);">
+                        <ui:VisualElement style="flex-direction: row; justify-content: space-between; align-items: center;">
+                            <ui:Label text="테스트 세션" class="form-label" style="color: rgb(255, 180, 70); font-size: 16px; font-weight: bold; margin-bottom: 0;" />
+                            <ui:Toggle name="DevTestSessionToggle" style="margin-left: 12px;" />
+                        </ui:VisualElement>
+                        <ui:Label text="Firebase 데이터를 변경하지 않고 실제 재고와 참가자 풀을 읽어 테스트합니다." class="form-label" style="color: rgba(255, 255, 255, 0.72); font-size: 12px; margin-top: 6px; margin-bottom: 0; white-space: normal;" />
+                    </ui:VisualElement>
                     <ui:VisualElement class="form-field" style="margin-top: 16px;">
                         <ui:Label text="물리 엔진 설정" class="form-label" style="color: rgb(0, 238, 255); font-size: 16px; font-weight: bold;" />
                         <ui:VisualElement style="flex-direction: row; justify-content: space-between; align-items: center; margin-bottom: 4px;">
@@ -344,6 +351,9 @@
                     <ui:Label text="🔥 MAX 파워 모드 발동! 🔥" class="pity-max-text" />
                 </ui:VisualElement>
             </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="TestSessionBanner" picking-mode="Ignore" style="display: none; position: absolute; top: 10px; left: 0; right: 0; align-items: center; justify-content: center;">
+            <ui:Label text="테스트 세션 진행중... · Firebase 읽기 전용" style="background-color: rgba(170, 55, 0, 0.94); color: rgb(255, 245, 220); border-color: rgb(255, 180, 70); border-width: 2px; border-radius: 12px; padding: 8px 20px; font-size: 17px; font-weight: bold; -unity-text-align: middle-center;" />
         </ui:VisualElement>
     </ui:VisualElement>
 </ui:UXML>

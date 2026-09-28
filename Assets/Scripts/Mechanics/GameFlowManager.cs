@@ -5,6 +5,12 @@ using ClawMachine.UI;
 
 namespace ClawMachine.Mechanics
 {
+    public enum PlaySessionMode
+    {
+        Normal,
+        DevGuestDryRun
+    }
+
     public enum RewardType
     {
         Legendary,
@@ -265,6 +271,12 @@ namespace ClawMachine.Mechanics
                 ClawMachineUIManager.Instance.ShowRegistrationError("DB 연결을 확인해 주세요.");
                 return;
             }
+            if (ClawMachineUIManager.Instance != null && ClawMachineUIManager.Instance.IsActiveTestSession)
+            {
+                // 테스트 세션의 인스타 값은 확률 판단에만 사용하며 참가자 문서는 만들지 않습니다.
+                ActivateGameSession();
+                return;
+            }
             // 인스타 ID가 없으면 참가자 프로필과 매칭 인덱스를 만들지 않습니다.
             if (string.IsNullOrWhiteSpace(insta))
             {
@@ -416,6 +428,8 @@ namespace ClawMachine.Mechanics
 
             // A result is only final after the shared database claim is confirmed.
             string rewardRoundId = System.Guid.NewGuid().ToString("N");
+            bool isTestSession = ClawMachineUIManager.Instance != null &&
+                                 ClawMachineUIManager.Instance.IsActiveTestSession;
             if (firebaseService == null)
             {
                 ClawMachineUIManager.Instance.ShowRegistrationError("DB 연결을 확인해 주세요. 보상 지급을 보류합니다.");
@@ -500,6 +514,12 @@ namespace ClawMachine.Mechanics
                         yield break;
                     }
 
+                    if (isTestSession)
+                    {
+                        Debug.Log($"[테스트 세션] {matchResult.name} 인스타 카드를 읽기 전용으로 확인했습니다.");
+                        break;
+                    }
+
                     ProfileClaimResult claimResult = ProfileClaimResult.Failed;
                     yield return firebaseService.ClaimProfile(rewardRoundId, matchResult, null,
                         result => claimResult = result);
@@ -521,27 +541,35 @@ namespace ClawMachine.Mechanics
 
             if (reward == RewardType.Doll || reward == RewardType.Legendary)
             {
-                bool claimed = false;
-                if (firebaseService != null)
-                    yield return firebaseService.ClaimPrize(rewardRoundId, reward == RewardType.Legendary,
-                        success => claimed = success);
-                if (!claimed)
+                if (!isTestSession)
                 {
-                    ClawMachineUIManager.Instance.ShowRegistrationError("재고 소진 또는 저장 확인 실패: 상품 지급 보류. 운영진에게 알려 주세요. " + rewardRoundId);
-                    yield break;
+                    bool claimed = false;
+                    if (firebaseService != null)
+                        yield return firebaseService.ClaimPrize(rewardRoundId, reward == RewardType.Legendary,
+                            success => claimed = success);
+                    if (!claimed)
+                    {
+                        ClawMachineUIManager.Instance.ShowRegistrationError("재고 소진 또는 저장 확인 실패: 상품 지급 보류. 운영진에게 알려 주세요. " + rewardRoundId);
+                        yield break;
+                    }
+                    if (reward == RewardType.Doll) totalDolls = Mathf.Max(0, totalDolls - 1);
+                    else totalLegendaryDolls = Mathf.Max(0, totalLegendaryDolls - 1);
                 }
-                if (reward == RewardType.Doll) totalDolls = Mathf.Max(0, totalDolls - 1);
-                else totalLegendaryDolls = Mathf.Max(0, totalLegendaryDolls - 1);
+                else Debug.Log($"[테스트 세션] {reward} 결과를 표시하고 실제 재고 차감은 생략합니다.");
             }
             else if (reward == RewardType.Candy)
             {
-                bool claimed = false;
-                yield return firebaseService.ClaimCandy(rewardRoundId, success => claimed = success);
-                if (!claimed)
+                if (!isTestSession)
                 {
-                    ClawMachineUIManager.Instance.ShowRegistrationError("사탕 결과 저장 확인 실패: 지급 보류. 운영진에게 알려 주세요. " + rewardRoundId);
-                    yield break;
+                    bool claimed = false;
+                    yield return firebaseService.ClaimCandy(rewardRoundId, success => claimed = success);
+                    if (!claimed)
+                    {
+                        ClawMachineUIManager.Instance.ShowRegistrationError("사탕 결과 저장 확인 실패: 지급 보류. 운영진에게 알려 주세요. " + rewardRoundId);
+                        yield break;
+                    }
                 }
+                else Debug.Log("[테스트 세션] 사탕 결과를 표시하고 Firebase 기록은 생략합니다.");
             }
 
             ClawMachineUIManager.Instance.ShowRewardPopup(
@@ -551,7 +579,7 @@ namespace ClawMachine.Mechanics
                 matchResult.insta,
                 matchResult.bio);
 
-            if (reward == RewardType.Instagram)
+            if (reward == RewardType.Instagram && !isTestSession)
             {
                 totalInstaCards = Mathf.Max(0, totalInstaCards - 1);
             }

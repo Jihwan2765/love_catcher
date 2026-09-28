@@ -173,6 +173,15 @@ namespace ClawMachine.UI
         private TextField devCoinsInput;
         private Button devSaveCoinsBtn;
         private Button devCloseBtn;
+        private Toggle devTestSessionToggle;
+        private VisualElement testSessionBanner;
+        private static bool devTestSessionEnabled;
+        private bool sessionModeLocked;
+        private ClawMachine.Mechanics.PlaySessionMode activeSessionMode =
+            ClawMachine.Mechanics.PlaySessionMode.Normal;
+
+        public bool IsActiveTestSession =>
+            activeSessionMode == ClawMachine.Mechanics.PlaySessionMode.DevGuestDryRun;
 
         // Dev Mode Stats Dashboard Labels
         private Label devStatRegistrations;
@@ -217,6 +226,7 @@ namespace ClawMachine.UI
             public string insta;
             public string bio;
             public string gender;
+            public ClawMachine.Mechanics.PlaySessionMode sessionMode;
         }
 
         private static bool hasPendingSceneRecovery;
@@ -428,6 +438,8 @@ namespace ClawMachine.UI
             devCoinsInput = root.Q<TextField>("DevCoinsInput");
             devSaveCoinsBtn = root.Q<Button>("DevSaveCoinsBtn");
             devCloseBtn = root.Q<Button>("DevCloseBtn");
+            devTestSessionToggle = root.Q<Toggle>("DevTestSessionToggle");
+            testSessionBanner = root.Q<VisualElement>("TestSessionBanner");
 
             // Bind Stat Labels
             devStatRegistrations = root.Q<Label>("DevStatRegistrations");
@@ -560,6 +572,21 @@ namespace ClawMachine.UI
             // Dev Mode Events
             if (devCloseBtn != null) devCloseBtn.clicked += () => { playBtnSound(); HideOverlay(devModeOverlay); };
             if (devOpenDbViewBtn != null) devOpenDbViewBtn.clicked += () => { playBtnSound(); OpenDbView(); };
+            if (devTestSessionToggle != null)
+            {
+                devTestSessionToggle.RegisterValueChangedCallback(evt => {
+                    if (!CanChangeTestSessionMode())
+                    {
+                        devTestSessionToggle.SetValueWithoutNotify(devTestSessionEnabled);
+                        return;
+                    }
+
+                    devTestSessionEnabled = evt.newValue;
+                    activeSessionMode = ClawMachine.Mechanics.PlaySessionMode.Normal;
+                    ApplyFirebaseReadOnlyMode();
+                    UpdateTestSessionUI();
+                });
+            }
 
             // Dev DB View Events
             if (devDbCloseBtn != null) devDbCloseBtn.clicked += () => { playBtnSound(); CloseDbView(); };
@@ -994,6 +1021,10 @@ namespace ClawMachine.UI
             }
 
             // Initial UI State
+            if (devTestSessionToggle != null)
+                devTestSessionToggle.SetValueWithoutNotify(devTestSessionEnabled);
+            ApplyFirebaseReadOnlyMode();
+            UpdateTestSessionUI();
             SelectGender("남"); // 기본 성별은 남성
             HideAllOverlays();
             ShowOverlay(registerOverlay);
@@ -1035,6 +1066,47 @@ namespace ClawMachine.UI
             genderBtnMale?.SetEnabled(!busy);
             genderBtnFemale?.SetEnabled(!busy);
             registerSubmitBtn?.SetEnabled(!busy);
+            devTestSessionToggle?.SetEnabled(CanChangeTestSessionMode());
+        }
+
+        private void LockSessionModeForPlay()
+        {
+            activeSessionMode = devTestSessionEnabled
+                ? ClawMachine.Mechanics.PlaySessionMode.DevGuestDryRun
+                : ClawMachine.Mechanics.PlaySessionMode.Normal;
+            sessionModeLocked = true;
+            ApplyFirebaseReadOnlyMode();
+            UpdateTestSessionUI();
+        }
+
+        private void UnlockSessionModeAfterPlay()
+        {
+            activeSessionMode = ClawMachine.Mechanics.PlaySessionMode.Normal;
+            sessionModeLocked = false;
+            ApplyFirebaseReadOnlyMode();
+            UpdateTestSessionUI();
+        }
+
+        private void ApplyFirebaseReadOnlyMode()
+        {
+            var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
+            if (firebase != null) firebase.SetReadOnlyMode(devTestSessionEnabled);
+        }
+
+        private void UpdateTestSessionUI()
+        {
+            devTestSessionToggle?.SetEnabled(CanChangeTestSessionMode());
+            if (devTestSessionToggle != null && devTestSessionToggle.value != devTestSessionEnabled)
+                devTestSessionToggle.SetValueWithoutNotify(devTestSessionEnabled);
+            if (testSessionBanner != null)
+                testSessionBanner.style.display = devTestSessionEnabled ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        private bool CanChangeTestSessionMode()
+        {
+            var firebase = ClawMachine.Mechanics.FirebaseRESTService.Instance;
+            return !sessionModeLocked && !registrationLookupInFlight && pendingPlayRoundId == null &&
+                   (firebase == null || !firebase.IsWriteInProgress);
         }
 
         private void SubmitRegistration()
@@ -1099,6 +1171,12 @@ namespace ClawMachine.UI
                 CheckCoinAndProceed();
                 return;
             }
+            if (devTestSessionEnabled)
+            {
+                // 테스트 세션에서는 입력한 인스타를 확률 판단에만 사용하고 참가자 조회·등록은 하지 않습니다.
+                CheckCoinAndProceed();
+                return;
+            }
             int generation = ++registrationRequestGeneration;
             SetRegistrationLookupBusy(true);
             StartCoroutine(firebase.CheckInstaIdExists(registeredInsta, exists => {
@@ -1125,6 +1203,7 @@ namespace ClawMachine.UI
             if (totalAvailable > 0)
             {
                 if (!BeginPlayTransition()) return;
+                LockSessionModeForPlay();
                 int revenue = GetRevenueFromStagedCoins(pendingCoinsToCharge);
                 currentCoins = totalAvailable - 1;
                 pendingCoinsToCharge = 0;
@@ -1202,11 +1281,14 @@ namespace ClawMachine.UI
             ShowOverlay(registerOverlay);
 
             OnNextPlayerReady?.Invoke();
+            UnlockSessionModeAfterPlay();
         }
 
         private void Update()
         {
             UpdateSceneReloadButtonState();
+            if (devTestSessionToggle != null)
+                devTestSessionToggle.SetEnabled(CanChangeTestSessionMode());
 
             if (devModeOverlay != null && devModeOverlay.style.display == DisplayStyle.Flex)
             {
@@ -1379,7 +1461,8 @@ namespace ClawMachine.UI
                     name = registeredName,
                     insta = registeredInsta,
                     bio = registeredBio,
-                    gender = registeredGender
+                    gender = registeredGender,
+                    sessionMode = activeSessionMode
                 };
                 hasPendingSceneRecovery = true;
             }
@@ -1422,6 +1505,12 @@ namespace ClawMachine.UI
             registeredGender = recovery.gender;
             isDuplicateRegistration = true;
             pendingCoinsToCharge = 0;
+            activeSessionMode = recovery.sessionMode;
+            devTestSessionEnabled = activeSessionMode ==
+                                    ClawMachine.Mechanics.PlaySessionMode.DevGuestDryRun;
+            sessionModeLocked = true;
+            ApplyFirebaseReadOnlyMode();
+            UpdateTestSessionUI();
 
             HideAllOverlays();
             ClawMachine.Mechanics.GameFlowManager.Instance.StartGameSession(
@@ -2962,6 +3051,11 @@ namespace ClawMachine.UI
 
         private void RecordPlaySession(int revenue)
         {
+            if (IsActiveTestSession)
+            {
+                Debug.Log("[테스트 세션] Firebase 플레이·매출·회차 기록을 생략합니다.");
+                return;
+            }
             if (pendingPlayRoundId != null)
             {
                 Debug.LogError("[LoveCatcher] 이전 플레이 저장 확인 전 새 회차 요청");
