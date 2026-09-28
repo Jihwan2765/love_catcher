@@ -1152,11 +1152,14 @@ namespace ClawMachine.UI
                 return;
             }
             bool isGuest = string.IsNullOrWhiteSpace(registeredInsta);
-            if (!isGuest && !ClawMachine.Mechanics.FirebaseRESTService.TryNormalizeInstaId(registeredInsta, out _))
+            string normalizedInsta = "";
+            if (!isGuest && !ClawMachine.Mechanics.FirebaseRESTService.TryNormalizeInstaId(
+                    registeredInsta, out normalizedInsta))
             {
                 ShowRegistrationError("인스타 ID는 영문, 숫자, 마침표, 밑줄로 30자 이내로 입력해 주세요.");
                 return;
             }
+            if (!isGuest) registeredInsta = normalizedInsta;
             if (currentCoins + pendingCoinsToCharge <= 0)
             {
                 ShowRegistrationError("코인을 먼저 충전해주세요! (우측 카드 이용)");
@@ -1179,7 +1182,7 @@ namespace ClawMachine.UI
             }
             int generation = ++registrationRequestGeneration;
             SetRegistrationLookupBusy(true);
-            StartCoroutine(firebase.CheckInstaIdExists(registeredInsta, exists => {
+            StartCoroutine(firebase.CheckParticipantRegistration(registeredInsta, registeredGender, result => {
                 if (generation != registrationRequestGeneration) return;
                 SetRegistrationLookupBusy(false);
                 if (BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAuthenticated)
@@ -1187,12 +1190,18 @@ namespace ClawMachine.UI
                     ShowRegistrationError("스태프 로그인이 해제됐습니다. 다시 로그인한 뒤 눌러 주세요.");
                     return;
                 }
-                if (!exists.HasValue)
+                if (result == ClawMachine.Mechanics.ParticipantRegistrationLookupResult.Failed)
                 {
                     ShowRegistrationError("참가자 중복 확인에 실패했습니다. 연결을 확인하고 다시 눌러 주세요.");
                     return;
                 }
-                isDuplicateRegistration = exists.Value;
+                if (result == ClawMachine.Mechanics.ParticipantRegistrationLookupResult.GenderConflict)
+                {
+                    ShowRegistrationError("이 인스타 ID는 다른 성별로 등록되어 있습니다. 입력 내용을 확인하거나 운영진에게 문의해 주세요.");
+                    return;
+                }
+                isDuplicateRegistration = result ==
+                    ClawMachine.Mechanics.ParticipantRegistrationLookupResult.ExistingParticipant;
                 CheckCoinAndProceed();
             }));
         }
@@ -1656,6 +1665,11 @@ namespace ClawMachine.UI
                     {
                         ShowDevAddStatus("⚠ 이미 등록된 인스타 아이디입니다. 목록에서 기존 참가자를 확인해 주세요.",
                             new Color(1f, 0.7f, 0.2f));
+                    }
+                    else if (result == ClawMachine.Mechanics.ParticipantRegistrationResult.GenderConflict)
+                    {
+                        ShowDevAddStatus("❌ 이 인스타 ID는 다른 성별로 등록되어 있습니다.",
+                            new Color(1f, 0.3f, 0.3f));
                     }
                     else if (result == ClawMachine.Mechanics.ParticipantRegistrationResult.IndexConflict)
                     {

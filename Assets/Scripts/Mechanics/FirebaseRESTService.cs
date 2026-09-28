@@ -12,8 +12,17 @@ namespace ClawMachine.Mechanics
     {
         Created,
         AlreadyRegistered,
+        GenderConflict,
         InvalidInput,
         IndexConflict,
+        Failed
+    }
+
+    public enum ParticipantRegistrationLookupResult
+    {
+        NewParticipant,
+        ExistingParticipant,
+        GenderConflict,
         Failed
     }
 
@@ -235,12 +244,20 @@ namespace ClawMachine.Mechanics
                     yield return SendAuthorized(check);
                     if (check.responseCode == 200)
                     {
-                        bool indexedParticipantValid = false;
-                        yield return ValidateParticipantKey(check.downloadHandler.text, handle,
-                            valid => indexedParticipantValid = valid);
-                        if (indexedParticipantValid)
+                        ParticipantRegistrationLookupResult indexedStatus = ParticipantRegistrationLookupResult.Failed;
+                        yield return ValidateParticipantRegistration(
+                            check.downloadHandler.text,
+                            handle,
+                            gender,
+                            status => indexedStatus = status);
+                        if (indexedStatus == ParticipantRegistrationLookupResult.ExistingParticipant)
                         {
                             CompleteRegistration(ParticipantRegistrationResult.AlreadyRegistered, callback, resultCallback);
+                            yield break;
+                        }
+                        if (indexedStatus == ParticipantRegistrationLookupResult.GenderConflict)
+                        {
+                            CompleteRegistration(ParticipantRegistrationResult.GenderConflict, callback, resultCallback);
                             yield break;
                         }
                         if (repairOrphanedLinks && BoothStaffAuth.Instance != null && BoothStaffAuth.Instance.IsAdmin)
@@ -400,19 +417,20 @@ namespace ClawMachine.Mechanics
         }
 
         /// <summary>
-        /// 특정 인스타 아이디가 이미 등록되어 있는지 확인합니다.
+        /// 입력한 인스타 아이디와 성별이 기존 참가자와 모두 일치하는지 확인합니다.
         /// </summary>
-        public IEnumerator CheckInstaIdExists(string instaId, Action<bool?> callback)
+        public IEnumerator CheckParticipantRegistration(string instaId, string gender,
+            Action<ParticipantRegistrationLookupResult> callback)
         {
             if (string.IsNullOrEmpty(firebaseProjectId) ||
                 BoothStaffAuth.Instance == null || !BoothStaffAuth.Instance.IsAuthenticated)
             {
-                callback?.Invoke(null);
+                callback?.Invoke(ParticipantRegistrationLookupResult.Failed);
                 yield break;
             }
 
             if (!TryNormalizeInstaId(instaId, out string normalizedInstaId))
-            { callback?.Invoke(null); yield break; }
+            { callback?.Invoke(ParticipantRegistrationLookupResult.Failed); yield break; }
             instaId = normalizedInstaId;
             string indexUrl = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents/ParticipantKeys/insta_{instaId}";
             using (var indexed = UnityWebRequest.Get(indexUrl))
@@ -420,12 +438,20 @@ namespace ClawMachine.Mechanics
                 yield return SendAuthorized(indexed);
                 if (indexed.responseCode == 200)
                 {
-                    bool valid = false;
-                    yield return ValidateParticipantKey(indexed.downloadHandler.text, instaId, result => valid = result);
-                    callback?.Invoke(valid ? true : (bool?)null);
+                    ParticipantRegistrationLookupResult status = ParticipantRegistrationLookupResult.Failed;
+                    yield return ValidateParticipantRegistration(
+                        indexed.downloadHandler.text,
+                        instaId,
+                        gender,
+                        result => status = result);
+                    callback?.Invoke(status);
                     yield break;
                 }
-                if (indexed.responseCode != 404) { callback?.Invoke(null); yield break; }
+                if (indexed.responseCode != 404)
+                {
+                    callback?.Invoke(ParticipantRegistrationLookupResult.Failed);
+                    yield break;
+                }
             }
 
             string url = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents:runQuery";
@@ -462,27 +488,91 @@ namespace ClawMachine.Mechanics
                         RunQueryResponseList responseList = JsonUtility.FromJson<RunQueryResponseList>(wrappedJson);
                         if (responseList?.items == null)
                         {
-                            callback?.Invoke(null);
+                            callback?.Invoke(ParticipantRegistrationLookupResult.Failed);
                             yield break;
                         }
+                        bool foundSameInsta = false;
                         foreach (var item in responseList.items)
                         {
                             if (item.document != null && item.document.fields != null && !string.IsNullOrEmpty(item.document.name))
                             {
-                                callback?.Invoke(true); // Exists
-                                yield break;
+                                string storedInsta = item.document.fields.insta?.stringValue ??
+                                                     item.document.fields.instaId?.stringValue;
+                                if (!TryNormalizeInstaId(storedInsta, out string storedHandle) ||
+                                    storedHandle != instaId)
+                                    continue;
+
+                                foundSameInsta = true;
+                                if (item.document.fields.gender?.stringValue == gender)
+                                {
+                                    callback?.Invoke(ParticipantRegistrationLookupResult.ExistingParticipant);
+                                    yield break;
+                                }
                             }
                         }
+                        callback?.Invoke(foundSameInsta
+                            ? ParticipantRegistrationLookupResult.GenderConflict
+                            : ParticipantRegistrationLookupResult.NewParticipant);
+                        yield break;
                     }
                     catch (Exception ex)
                     {
                         Debug.LogError($"[Firebase] 중복 확인 파싱 실패: {ex.Message}");
-                        callback?.Invoke(null);
+                        callback?.Invoke(ParticipantRegistrationLookupResult.Failed);
                         yield break;
                     }
                 }
-                else { callback?.Invoke(null); yield break; }
-                callback?.Invoke(false);
+                callback?.Invoke(ParticipantRegistrationLookupResult.Failed);
+            }
+        }
+
+        private IEnumerator ValidateParticipantRegistration(string indexJson, string handle, string gender,
+            Action<ParticipantRegistrationLookupResult> callback)
+        {
+            ParticipantKeyDocument indexed;
+            try { indexed = JsonUtility.FromJson<ParticipantKeyDocument>(indexJson); }
+            catch (Exception)
+            {
+                callback?.Invoke(ParticipantRegistrationLookupResult.Failed);
+                yield break;
+            }
+
+            string participantKey = indexed?.fields?.participantKey?.stringValue;
+            if (string.IsNullOrWhiteSpace(participantKey) ||
+                !System.Text.RegularExpressions.Regex.IsMatch(participantKey, "^[a-zA-Z0-9._-]{1,1500}$"))
+            {
+                callback?.Invoke(ParticipantRegistrationLookupResult.Failed);
+                yield break;
+            }
+
+            string root = $"https://firestore.googleapis.com/v1/projects/{firebaseProjectId}/databases/(default)/documents";
+            using (var person = UnityWebRequest.Get(root + "/Participants/" + Uri.EscapeDataString(participantKey)))
+            {
+                yield return SendAuthorized(person);
+                if (person.responseCode != 200)
+                {
+                    callback?.Invoke(ParticipantRegistrationLookupResult.Failed);
+                    yield break;
+                }
+
+                try
+                {
+                    var document = JsonUtility.FromJson<FirestoreDocument>(person.downloadHandler.text);
+                    string storedInsta = document?.fields?.insta?.stringValue ?? document?.fields?.instaId?.stringValue;
+                    if (!TryNormalizeInstaId(storedInsta, out string storedHandle) || storedHandle != handle)
+                    {
+                        callback?.Invoke(ParticipantRegistrationLookupResult.Failed);
+                        yield break;
+                    }
+
+                    callback?.Invoke(document.fields.gender?.stringValue == gender
+                        ? ParticipantRegistrationLookupResult.ExistingParticipant
+                        : ParticipantRegistrationLookupResult.GenderConflict);
+                }
+                catch (Exception)
+                {
+                    callback?.Invoke(ParticipantRegistrationLookupResult.Failed);
+                }
             }
         }
 

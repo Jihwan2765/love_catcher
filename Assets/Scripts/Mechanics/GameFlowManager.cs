@@ -294,10 +294,25 @@ namespace ClawMachine.Mechanics
 
         private IEnumerator RegisterThenStart(string name, string insta, string bio, string gender)
         {
-            bool registered = false;
-            yield return firebaseService.RegisterPlayer(name, insta, bio, gender, 0, ok => registered = ok);
+            ParticipantRegistrationResult registrationResult = ParticipantRegistrationResult.Failed;
+            yield return firebaseService.RegisterPlayer(
+                name,
+                insta,
+                bio,
+                gender,
+                0,
+                null,
+                false,
+                result => registrationResult = result);
             sessionStarting = false;
-            if (!registered)
+            if (registrationResult == ParticipantRegistrationResult.GenderConflict)
+            {
+                ClawMachineUIManager.Instance.ShowRegistrationError(
+                    "이 인스타 ID는 다른 성별로 등록되어 있습니다. 입력 내용을 확인하거나 운영진에게 문의해 주세요.");
+                yield break;
+            }
+            if (registrationResult != ParticipantRegistrationResult.Created &&
+                registrationResult != ParticipantRegistrationResult.AlreadyRegistered)
             {
                 ClawMachineUIManager.Instance.ShowRegistrationError("참가자 등록 확인 실패. 운영진이 연결과 결제 기록을 확인해 주세요.");
                 yield break;
